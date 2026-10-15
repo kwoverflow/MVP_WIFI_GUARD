@@ -68,7 +68,7 @@ def _emit(out: Path, text: str, label: str, check: bool) -> int:
         print(f"{out.name} up to date")
         return 0
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(text, encoding="utf-8")
+    out.write_text(text, encoding="utf-8", newline="\n")
     return 0
 
 

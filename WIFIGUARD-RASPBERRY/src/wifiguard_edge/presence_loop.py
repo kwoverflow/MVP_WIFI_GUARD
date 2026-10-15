@@ -15,6 +15,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from dataclasses import replace
 from typing import Any
 
 from .csi.buffer import RingBuffer
@@ -44,20 +45,22 @@ class PresenceLoop(threading.Thread):
             presence_timeout_s=config.presence_timeout_s,
         )
 
-        self._stop = threading.Event()
+        # Do not shadow threading.Thread._stop(), which join() invokes.
+        self._stop_event = threading.Event()
         self._lock = threading.Lock()
         self._last: PresenceStatus | None = None
         self._tick_count = 0
         self._skip_count = 0
         self._last_error: str | None = None
+        self._settings_revision = 0
 
     def stop(self) -> None:
-        self._stop.set()
+        self._stop_event.set()
 
     def run(self) -> None:
         log.info("presence loop start: stride=%.2fs", self.stride_sec)
         next_tick = time.monotonic()
-        while not self._stop.is_set():
+        while not self._stop_event.is_set():
             now = time.monotonic()
             if now < next_tick:
                 time.sleep(min(next_tick - now, 0.05))
@@ -69,15 +72,18 @@ class PresenceLoop(threading.Thread):
                 log.exception("presence tick failed")
 
     def _tick(self) -> None:
-        cfg = self.config
+        with self._lock:
+            cfg = replace(self.config)
+            revision = self._settings_revision
+            detector = self.detector
         # 캘리브레이션(onboarding.run_calibration)이 갱신했을 수 있는 값을 매 틱 반영
-        self.detector.set_thresholds(
+        detector.set_thresholds(
             cfg.presence_mv_threshold,
             cfg.wander_baseline,
             cfg.wander_ratio_threshold,
             cfg.wander_min_duration_s,
         )
-        self.detector.presence_timeout_s = cfg.presence_timeout_s
+        detector.presence_timeout_s = cfg.presence_timeout_s
 
         mv_window = self.ring.get_window(cfg.window_sec)
         if mv_window is None:
@@ -100,6 +106,18 @@ class PresenceLoop(threading.Thread):
             self._record_skip("insufficient window for MV")
             return
 
+        wander_current = self._compute_wander_current(cfg)
+
+        status = detector.update(time.time(), mv_result.mv_current, wander_current)
+        with self._lock:
+            if revision != self._settings_revision:
+                return
+            self._last = status
+            self._tick_count += 1
+            self._last_error = None
+
+    def _compute_wander_current(self, cfg: PresenceConfig) -> float:
+        """Separate expensive branch; original Pi3 computes this every tick."""
         wander_current = 0.0
         wander_window = self.ring.get_window(cfg.wander_window_sec)
         if wander_window is not None:
@@ -122,11 +140,21 @@ class PresenceLoop(threading.Thread):
             if wander_result is not None and wander_result.band_energy is not None:
                 wander_current = wander_result.band_energy
 
-        status = self.detector.update(time.time(), mv_result.mv_current, wander_current)
+        return wander_current
+
+    def apply_settings(self, values: dict[str, float]) -> None:
+        from wifiguard_contracts.control import PresenceSettings
+        effective = PresenceSettings.model_validate(values).model_dump()
         with self._lock:
-            self._last = status
-            self._tick_count += 1
-            self._last_error = None
+            for name, value in effective.items():
+                setattr(self.config, name, value)
+            self._settings_revision += 1
+            self.detector = PresenceDetector(mv_threshold=self.config.presence_mv_threshold,
+                wander_baseline=self.config.wander_baseline,
+                wander_ratio_threshold=self.config.wander_ratio_threshold,
+                wander_min_duration_s=self.config.wander_min_duration_s,
+                presence_timeout_s=self.config.presence_timeout_s)
+            self._last = None  # old threshold decisions must not masquerade as new ones
 
     def _record_skip(self, reason: str) -> None:
         with self._lock:

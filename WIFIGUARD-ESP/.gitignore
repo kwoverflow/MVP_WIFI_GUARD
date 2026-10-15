@@ -7,6 +7,8 @@ managed_components/
 # ESP-IDF generated config — keep only sdkconfig.defaults (sdkconfig held Wi-Fi credentials in the original repo)
 sdkconfig
 sdkconfig.old
+sdkconfig.private.defaults
+build-*/
 
 # Python
 __pycache__/
@@ -18,3 +20,6 @@ tools/lagacy/env/
 
 # captured CSI datasets (176MB CSV) — keep outside git (original: csi_fall/esp32c5/tools/stride/data)
 tools/stride/data/
+
+# Local full-flash safety backups from physical receivers
+artifacts/hardware-backups/

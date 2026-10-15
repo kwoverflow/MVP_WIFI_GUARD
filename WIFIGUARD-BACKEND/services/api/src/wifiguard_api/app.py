@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import APIRouter, FastAPI
@@ -41,6 +42,7 @@ API_PREFIX = "/api/v1"
 async def lifespan(app: FastAPI):
     """인제스트 기동·정지. 실패해도 API 는 떠야 한다."""
     service = None
+    push_worker = None
     try:
         from wifiguard_ingest import start_all
 
@@ -50,20 +52,34 @@ async def lifespan(app: FastAPI):
         log.info("wifiguard_ingest 미설치 — 실시간 경로 없이 기동한다")
         app.state.ingest = None
     except Exception:
+        if os.getenv("LOCAL_EDGE_TOKEN"):
+            raise  # Pi5 profile must not silently start without local ingestion.
         # 브로커가 죽었다고 CRUD 까지 못 쓰게 되면 안 된다.
         log.exception("인제스트 기동 실패 — 실시간 경로 없이 계속한다")
         app.state.ingest = None
     try:
+        from wifiguard_notify.mobile import test_push_enabled as mobile_push_enabled
+        if mobile_push_enabled():
+            from wifiguard_notify.mobile import MobilePushWorker, FcmTransport
+            from wifiguard_db.engine import get_session
+            push_worker = MobilePushWorker(get_session, FcmTransport())
+            push_worker.start()
         yield
     finally:
+        if push_worker is not None:
+            push_worker.stop()
         if service is not None:
             try:
-                service.stop()
+                from wifiguard_ingest.service import stop_all
+                stop_all()
             except Exception:
                 log.exception("인제스트 정지 중 예외")
 
 
 def create_app() -> FastAPI:
+    settings.validate_security()
+    if os.getenv("LOCAL_EDGE_TOKEN") and (settings.jwt_secret_bytes < 32 or settings.jwt_secret_is_default or "REPLACE" in settings.jwt_secret):
+        raise RuntimeError("Pi5 local mode requires a private JWT_SECRET of at least 32 bytes")
     app = FastAPI(
         title="WIFI-GUARD API",
         version="0.1.0",
@@ -81,6 +97,13 @@ def create_app() -> FastAPI:
         log.warning("JWT_SECRET 이 기본값(changeme)입니다 — 개발 환경 외에서는 반드시 교체하세요.")
 
     app.include_router(health.router)
+    from .local_edge import router as local_edge_router
+    app.include_router(local_edge_router)
+    from .routers.local_control import router as control_router, internal_router
+    app.include_router(control_router, prefix=API_PREFIX)
+    app.include_router(internal_router)
+    from .routers.pc_simulation import router as pc_simulation_router
+    app.include_router(pc_simulation_router, prefix=API_PREFIX)
 
     try:
         from .realtime import router as realtime_router
@@ -91,7 +114,7 @@ def create_app() -> FastAPI:
 
     api = APIRouter(prefix=API_PREFIX)
     api.include_router(auth.router)
-    for name in ("facilities", "devices", "residents", "falls", "event_logs", "recipients", "config", "account"):
+    for name in ("facilities", "devices", "residents", "falls", "event_logs", "recipients", "config", "account", "training", "mobile"):
         try:
             module = __import__(f"wifiguard_api.routers.{name}", fromlist=["router"])
         except ModuleNotFoundError:

@@ -7,6 +7,11 @@ import { ApiError } from "@/api/client";
 import { useCreateDevice, useDeleteDevice, useUpdateDevice } from "@/api/mutations";
 import { useDevices } from "@/api/queries";
 import { LinkStatusPanel } from "@/components/LinkStatusPanel";
+import { Pi5LocalPanel } from "@/components/Pi5LocalPanel";
+import { RemoteDevicePanel } from "@/components/RemoteDevicePanel";
+import { localEdgeCommand } from "@/api/local-edge";
+import { USE_MOCK } from "@/api/client";
+import { usePresentation } from "@/components/usePresentation";
 import { isCalibrationDemoRunning, runCalibrationDemo, secondsLeft } from "@/lib/calibration-sim";
 import {
   CALIBRATION_STAGE_LABEL,
@@ -16,6 +21,7 @@ import {
   type Device,
 } from "@/lib/domain";
 import { fmtDateTime } from "@/lib/format";
+import { Radio } from "lucide-react";
 
 export const Route = createFileRoute("/devices")({
   head: () => ({ meta: [{ title: "장치 설정 · CSI-Guard" }] }),
@@ -29,11 +35,12 @@ function errMsg(err: unknown, fallback: string) {
 }
 
 /**
- * 장치 관리. 캘리브레이션은 실시간 경로(엣지 ack)가 붙기 전까지 61초 데모 타이머로 진행을 보여주고
- * 완료 값만 PATCH /devices/{id} 로 영속한다. 진행 중 새로고침하면 타이머는 사라지고 서버 상태만 남는다.
+ * Real MQTT commands use a durable request/ACK workflow. Demonstration timers
+ * are compiled only into the separately flagged mock adapter.
  */
 function DevicesPage() {
   const { user } = useAuth();
+  const presentation = usePresentation();
   const isFacility = user?.service === "FACILITY";
   const locationLabel = isFacility ? "호실" : "공간";
   const { data: devices = [], isLoading } = useDevices();
@@ -47,6 +54,16 @@ function DevicesPage() {
   const selected = devices.find((d) => d.id === selectedId) ?? devices[0];
 
   const startCalibration = async (device: Device) => {
+    if (!USE_MOCK) {
+      try {
+        if (device.connection !== "SPI") throw new Error("MQTT 장치는 원격 장치 제어에서 보정을 요청하세요.");
+        await localEdgeCommand(device.id, "recalibrate");
+        toast("새 빈방 보정 접수 · Pi5 운영 패널에서 빈방 확인을 진행하세요");
+      } catch (err) {
+        toast.error(errMsg(err, "실제 보정 제어가 연결되지 않았습니다"));
+      }
+      return;
+    }
     try {
       await update.mutateAsync({
         id: device.id,
@@ -116,13 +133,11 @@ function DevicesPage() {
 
   return (
     <div>
-      <Header title={isFacility ? "장치 설정 · 전체 장치 관리" : "장치 설정 · 가정 내 장치"} />
+      <Header title="장치 관리" />
       <div className="p-6 space-y-4 max-w-7xl">
-        <div className="flex justify-between items-center">
+        <div className="management-heading flex justify-between items-center">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight mb-1">
-              {isFacility ? "Device Management" : "가정 내 장치 관리"}
-            </h1>
+            <h1 className="text-2xl font-semibold tracking-tight mb-1">등록된 장치</h1>
             <p className="text-sm text-muted">
               {isFacility
                 ? "등록된 모든 장치의 연결 상태를 확인하고, 필요할 때 재설정할 수 있습니다."
@@ -137,20 +152,66 @@ function DevicesPage() {
           </button>
         </div>
 
-        <LinkStatusPanel />
+        <Pi5LocalPanel compact deviceId={selected?.id} canBind={selected?.connection === "SPI"} />
+        <details className="technical-disclosure">
+          <summary>연결 상세</summary>
+          <div className="technical-content">
+            <LinkStatusPanel />
+          </div>
+        </details>
 
+        <div className="mobile-record-list mobile-only" aria-label="등록된 센서 목록">
+          {devices.map((d) => (
+            <button
+              key={d.id}
+              onClick={() => setSelectedId(d.id)}
+              aria-pressed={d.id === selected?.id}
+              className={`mobile-record-card mobile-device-card ${d.id === selected?.id ? "is-selected" : ""}`}
+            >
+              <div className="mobile-record-heading">
+                <span className="mobile-record-symbol">
+                  <Radio size={21} />
+                </span>
+                <div>
+                  <small>{presentation.label(d.room, "room")}</small>
+                  <h2>{presentation.label(d.name, "device")}</h2>
+                </div>
+                <span
+                  className={`status-pill ${d.calibrating || calib[d.id] ? "tone-warning" : d.online === true ? "tone-success" : "tone-neutral"}`}
+                >
+                  {d.calibrating || calib[d.id]
+                    ? "보정 중"
+                    : d.online === true
+                      ? "연결됨"
+                      : d.online === false
+                        ? "연결 끊김"
+                        : "연결 미확인"}
+                </span>
+              </div>
+              <div className="mobile-record-facts">
+                <span>{d.connection} 연결</span>
+                <span>
+                  {d.lastSeenAt ? `마지막 연결 ${fmtDateTime(d.lastSeenAt)}` : "연결 기록 없음"}
+                </span>
+              </div>
+            </button>
+          ))}
+          {!isLoading && !devices.length && (
+            <div className="mobile-empty-card">
+              <h2>등록된 센서가 없습니다</h2>
+              <p>장치 추가를 눌러 사용할 센서를 등록해 주세요.</p>
+            </div>
+          )}
+        </div>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <div className="lg:col-span-2 bg-surface border border-border rounded-lg overflow-hidden">
+          <div className="desktop-only lg:col-span-2 bg-surface border border-border rounded-lg overflow-hidden">
             <table className="w-full text-left text-sm">
               <thead>
                 <tr className="text-[10px] text-muted border-b border-border bg-background/30 font-mono">
                   <th className="p-3 uppercase">이름</th>
                   <th className="p-3 uppercase">{locationLabel}</th>
                   <th className="p-3 uppercase">연결</th>
-                  <th className="p-3 uppercase">채널</th>
-                  <th className="p-3 uppercase">RSSI</th>
-                  <th className="p-3 uppercase">Noise</th>
-                  <th className="p-3 uppercase">Status</th>
+                  <th className="p-3 uppercase">상태</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -162,8 +223,8 @@ function DevicesPage() {
                       onClick={() => setSelectedId(d.id)}
                       className={`hover:bg-black/5 cursor-pointer ${d.id === selected?.id ? "bg-primary/5" : ""}`}
                     >
-                      <td className="p-3 font-medium">{d.name}</td>
-                      <td className="p-3 font-mono">{d.room}</td>
+                      <td className="p-3 font-medium">{presentation.label(d.name, "device")}</td>
+                      <td className="p-3 font-mono">{presentation.label(d.room, "room")}</td>
                       <td className="p-3">
                         <span
                           className={`text-[9px] font-mono uppercase px-1.5 py-0.5 rounded border ${d.connection === "MQTT" ? "text-primary border-primary/40" : "text-warning border-warning/40"}`}
@@ -171,26 +232,16 @@ function DevicesPage() {
                           {d.connection}
                         </span>
                       </td>
-                      <td className="p-3 font-mono text-xs text-muted truncate max-w-[160px]">
-                        {d.connection === "MQTT" ? d.mqttTopic : (d.serialPort ?? "-")}
-                      </td>
-                      <td className="p-3 font-mono text-xs">
-                        <span className="text-muted">{d.baseRssi ?? "—"}→</span>
-                        <span className="text-foreground"> {d.currentRssi ?? "—"}</span>
-                      </td>
-                      <td className="p-3 font-mono text-xs">
-                        {d.noiseFloor != null ? `${d.noiseFloor}dBm` : "—"}
-                      </td>
                       <td className="p-3">
                         {running ? (
                           <span className="text-[10px] font-mono uppercase text-warning">
-                            ● calibrating
+                            보정 중
                           </span>
                         ) : (
                           <span
                             className={`text-[10px] font-mono uppercase ${d.online ? "text-success" : "text-muted"}`}
                           >
-                            {d.online ? "● online" : "○ offline"}
+                            {d.online ? "연결됨" : "연결 끊김"}
                           </span>
                         )}
                       </td>
@@ -199,7 +250,7 @@ function DevicesPage() {
                 })}
                 {!isLoading && devices.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="p-8 text-center text-muted text-xs">
+                    <td colSpan={4} className="p-8 text-center text-muted text-xs">
                       등록된 장치가 없습니다. 오른쪽 위 "+ 장치 추가"로 등록하세요.
                     </td>
                   </tr>
@@ -212,58 +263,78 @@ function DevicesPage() {
             <div className="bg-surface border border-border rounded-lg p-4 space-y-4">
               <div>
                 <SectionTitle>장치 상세</SectionTitle>
-                <div className="text-sm font-semibold">{selected.name}</div>
+                <div className="text-sm font-semibold">
+                  {presentation.label(selected.name, "device")}
+                </div>
                 <div className="text-[10px] font-mono text-muted">
-                  {selected.mac ?? "MAC 미등록"} · FW {selected.fw ?? "—"}
+                  {selected.mac && `장치 주소 ${selected.mac}`}{" "}
+                  {selected.fw && `버전 ${selected.fw}`}
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <Info
-                  label="Base RSSI"
-                  value={selected.baseRssi != null ? `${selected.baseRssi} dBm` : "—"}
-                />
-                <Info
-                  label="Current RSSI"
-                  value={selected.currentRssi != null ? `${selected.currentRssi} dBm` : "—"}
-                  highlight
-                />
-                <Info label="AGC" value={selected.agc != null ? String(selected.agc) : "—"} />
-                <Info
-                  label="Noise Floor"
-                  value={selected.noiseFloor != null ? `${selected.noiseFloor} dBm` : "—"}
-                />
-                <Info
-                  label="움직임 임계값"
-                  value={
-                    selected.presenceMvThreshold != null
-                      ? selected.presenceMvThreshold.toFixed(2)
-                      : "미측정"
-                  }
-                />
-                <Info
-                  label="재실 Baseline"
-                  value={
-                    selected.wanderBaseline != null ? selected.wanderBaseline.toFixed(2) : "미측정"
-                  }
-                />
-                <Info
-                  label={selected.connection === "MQTT" ? "MQTT Topic" : "Serial Port"}
-                  value={
-                    selected.connection === "MQTT"
-                      ? (selected.mqttTopic ?? "—")
-                      : (selected.serialPort ?? "—")
-                  }
-                  wide
-                />
-                <Info
-                  label="Last Seen"
-                  value={selected.lastSeenAt ? fmtDateTime(selected.lastSeenAt) : "—"}
-                  wide
-                />
-              </div>
+              <details className="device-info-disclosure">
+                <summary>장치 정보</summary>
+                <div className="grid grid-cols-2 gap-2 text-xs pt-3">
+                  <Info
+                    label="기준 신호 세기"
+                    value={selected.baseRssi != null ? `${selected.baseRssi} dBm` : "—"}
+                  />
+                  <Info
+                    label="현재 신호 세기"
+                    value={selected.currentRssi != null ? `${selected.currentRssi} dBm` : "—"}
+                    highlight
+                  />
+                  <Info label="AGC" value={selected.agc != null ? String(selected.agc) : "—"} />
+                  <Info
+                    label="신호 잡음"
+                    value={selected.noiseFloor != null ? `${selected.noiseFloor} dBm` : "—"}
+                  />
+                  <Info
+                    label="움직임 임계값"
+                    value={
+                      selected.presenceMvThreshold != null
+                        ? selected.presenceMvThreshold.toFixed(2)
+                        : "미측정"
+                    }
+                  />
+                  <Info
+                    label="재실 기준값"
+                    value={
+                      selected.wanderBaseline != null
+                        ? selected.wanderBaseline.toFixed(2)
+                        : "미측정"
+                    }
+                  />
+                  <Info
+                    label={
+                      selected.connection === "MQTT"
+                        ? "MQTT Topic"
+                        : selected.connection === "SPI"
+                          ? "SPI"
+                          : "Serial Port"
+                    }
+                    value={
+                      selected.connection === "MQTT"
+                        ? (selected.mqttTopic ?? "—")
+                        : selected.connection === "SPI"
+                          ? "Pi5 SPI0 / Batch8"
+                          : (selected.serialPort ?? "—")
+                    }
+                    wide
+                  />
+                  <Info
+                    label="마지막 연결 확인"
+                    value={selected.lastSeenAt ? fmtDateTime(selected.lastSeenAt) : "—"}
+                    wide
+                  />
+                </div>
+              </details>
 
-              {calib[selected.id] ? (
+              {!USE_MOCK && selected.connection === "MQTT" ? <RemoteDevicePanel key={selected.id} device={selected} /> : !USE_MOCK ? (
+                <p className="text-xs text-muted">
+                  상단에서 모니터링을 시작하거나 빈방 보정을 진행할 수 있습니다.
+                </p>
+              ) : calib[selected.id] ? (
                 <CalibratingPanel progress={calib[selected.id]} />
               ) : selected.calibrating ? (
                 <div className="border border-warning/50 rounded p-3 text-center space-y-2">
@@ -304,7 +375,7 @@ function DevicesPage() {
                 disabled={remove.isPending}
                 className="w-full py-1.5 border border-border rounded text-[10px] font-mono uppercase text-muted hover:text-primary disabled:opacity-50"
               >
-                Delete Device
+                장치 삭제
               </button>
             </div>
           )}
@@ -318,7 +389,7 @@ function DevicesPage() {
               const target = resetConfirm;
               setResetConfirm(null);
               void startCalibration(target);
-              toast("재설정 시작 · 약 61초");
+              if (USE_MOCK) toast("데모 보정 시작 · 약 61초 (실제 센서 보정 아님)");
             }}
           />
         )}
@@ -334,9 +405,9 @@ function DevicesPage() {
                 setAddOpen(false);
                 setSelectedId(dev.id);
                 toast.success(
-                  `${dev.name} 추가됨 · 캘리브레이션 시작 (공간 비우기 → 응답 대기 → AGC 보정 → baseline 측정)`,
+                  `${dev.name} 등록 완료${USE_MOCK ? " · 데모 보정 시작" : dev.connection === "MQTT" ? " · 발급된 MQTT 토픽으로 장치를 연결하세요" : " · 장치를 연결한 뒤 수신을 시작하세요"}`,
                 );
-                void startCalibration(dev);
+                if (USE_MOCK) void startCalibration(dev);
               } catch (err) {
                 toast.error(errMsg(err, "장치를 추가하지 못했습니다"));
               }
@@ -471,15 +542,14 @@ function AddDeviceModal({
   const [connection, setConnection] = useState<Connection>("MQTT");
   const [serialPort, setSerialPort] = useState("");
   const locationLabel = isFacility ? "호실" : "공간";
-  const valid = !!name && !!room && (connection === "MQTT" || !!serialPort);
+  const valid = !!name && !!room && (connection !== "SERIAL" || !!serialPort);
 
   return (
     <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-6">
       <div className="bg-surface border border-border rounded-lg max-w-sm w-full p-5 space-y-3">
         <h3 className="text-sm font-semibold">장치 추가</h3>
         <p className="text-[11px] text-muted">
-          추가 즉시 <b>4단계 캘리브레이션</b>(공간 비우기 → 응답 대기 → AGC 보정 → baseline 측정, 총
-          약 61초)이 진행됩니다.
+          장치를 등록한 뒤 연결 상태를 확인하고 빈방 보정을 진행하세요.
         </p>
         <div>
           <label className="text-[10px] font-mono uppercase text-muted">장치 이름</label>
@@ -515,8 +585,8 @@ function AddDeviceModal({
         </div>
         <div>
           <label className="text-[10px] font-mono uppercase text-muted">연결 방식</label>
-          <div className="grid grid-cols-2 gap-2 mt-1">
-            {(["MQTT", "SERIAL"] as Connection[]).map((c) => (
+          <div className="grid grid-cols-3 gap-2 mt-1">
+            {(["MQTT", "SERIAL", "SPI"] as Connection[]).map((c) => (
               <button
                 key={c}
                 type="button"
@@ -530,7 +600,9 @@ function AddDeviceModal({
           <p className="mt-1 text-[9px] text-muted font-mono">
             {connection === "MQTT"
               ? "MQTT 토픽은 서버가 wifiguard/{시설}/{장치} 형식으로 발급합니다."
-              : "로컬 백엔드(main.py) 에 USB 로 직결하는 개발용 연결입니다."}
+              : connection === "SPI"
+                ? "Pi5 로컬 수신용입니다. 등록 후 운영 패널에서 이 Pi5에 연결하세요."
+                : "USB 직렬 연결입니다. 현재 수신기에서는 이 방식으로 수신을 시작할 수 없습니다."}
           </p>
         </div>
         {connection === "SERIAL" && (
@@ -564,7 +636,7 @@ function AddDeviceModal({
             disabled={!valid || busy}
             className="px-4 py-2 bg-primary text-primary-foreground rounded text-xs font-mono uppercase font-bold disabled:opacity-50"
           >
-            추가 & 캘리브레이션
+            장치 등록
           </button>
         </div>
       </div>

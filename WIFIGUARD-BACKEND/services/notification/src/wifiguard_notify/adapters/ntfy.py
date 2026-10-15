@@ -54,7 +54,8 @@ class NtfyNotifier(threading.Thread):
         self.server = server.rstrip("/")
         self.notify_fall_enabled = notify_fall_enabled
         self._queue: queue.Queue[dict[str, Any] | None] = queue.Queue(maxsize=QUEUE_MAXSIZE)
-        self._stop = threading.Event()
+        # Thread._stop() is an internal method used by join(); never shadow it.
+        self._stop_event = threading.Event()
         self._lock = threading.Lock()
         self._sent_count = 0
         self._failed_count = 0
@@ -93,6 +94,19 @@ class NtfyNotifier(threading.Thread):
             }
         )
 
+    def send_test_now(self) -> bool:
+        """Send a test synchronously for the authenticated API test endpoint."""
+        when = time.strftime("%Y-%m-%d %H:%M:%S")
+        return self._send_with_retry(
+            {
+                "topic": self.topic,
+                "title": "CSI-Guard 테스트 알림",
+                "message": f"휴대폰 푸시 경로 정상 동작 확인 ({when})",
+                "priority": 3,
+                "tags": ["white_check_mark"],
+            }
+        )
+
     def _enqueue(self, payload: dict[str, Any]) -> None:
         try:
             self._queue.put_nowait(payload)
@@ -105,21 +119,25 @@ class NtfyNotifier(threading.Thread):
 
     def run(self) -> None:
         log.info("notifier start: server=%s topic=%s", self.server, self.topic)
-        while not self._stop.is_set():
+        while not self._stop_event.is_set():
             try:
                 payload = self._queue.get(timeout=0.5)
             except queue.Empty:
                 continue
             if payload is None:
+                self._queue.task_done()
                 break
-            self._send_with_retry(payload)
+            try:
+                self._send_with_retry(payload)
+            finally:
+                self._queue.task_done()
 
     def stop(self) -> None:
-        self._stop.set()
+        self._stop_event.set()
         with contextlib.suppress(queue.Full):
             self._queue.put_nowait(None)
 
-    def _send_with_retry(self, payload: dict[str, Any]) -> None:
+    def _send_with_retry(self, payload: dict[str, Any]) -> bool:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         last_error = ""
         for attempt in range(1, MAX_ATTEMPTS + 1):
@@ -137,7 +155,7 @@ class NtfyNotifier(threading.Thread):
                     self._last_sent_time = time.time()
                     self._last_error = None
                 log.info("알림 발송 성공: %s (시도 %d)", payload.get("title"), attempt)
-                return
+                return True
             except (urllib.error.URLError, urllib.error.HTTPError, OSError) as error:
                 last_error = f"{type(error).__name__}: {error}"
                 log.warning("알림 발송 실패 (시도 %d/%d): %s", attempt, MAX_ATTEMPTS, last_error)
@@ -147,11 +165,13 @@ class NtfyNotifier(threading.Thread):
             self._failed_count += 1
             self._last_error = last_error
         log.error("알림 발송 최종 실패: %s", payload.get("title"))
+        return False
 
     def status(self) -> dict[str, Any]:
         with self._lock:
             return {
                 "id": self.id,
+                "channel": "push",
                 "name": self.display_name,
                 "enabled": True,
                 "notify_fall_enabled": self.notify_fall_enabled,

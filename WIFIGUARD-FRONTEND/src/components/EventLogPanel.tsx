@@ -9,7 +9,7 @@ export function EventLogPanel() {
   return (
     <div className="bg-surface border border-border rounded-lg overflow-hidden">
       <div className="p-4 border-b border-border">
-        <h3 className="text-xs font-mono font-semibold uppercase tracking-widest">Event Log</h3>
+        <h3 className="text-xs font-semibold tracking-wide">최근 운영 기록</h3>
       </div>
       <div className="divide-y divide-border max-h-64 overflow-y-auto">
         {!isLoading && logs.length === 0 && (

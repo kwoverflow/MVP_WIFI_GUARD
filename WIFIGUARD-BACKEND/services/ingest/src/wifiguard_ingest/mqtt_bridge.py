@@ -73,6 +73,14 @@ class MqttBridge:
         self._client = client
         log.info("MQTT 브리지 기동 %s:%s", s.mqtt_host, s.mqtt_port)
 
+    def publish_command(self, topic: str, payload: bytes) -> None:
+        if self._client is None or not self._connected:
+            raise ConnectionError("MQTT unavailable")
+        info = self._client.publish(topic, payload, qos=1, retain=False)
+        info.wait_for_publish(timeout=3)
+        if not info.is_published():
+            raise TimeoutError("command PUBACK timeout")
+
     def _make_producer(self) -> Any:
         if self._producer_factory is not None:
             return self._producer_factory()

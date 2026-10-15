@@ -11,16 +11,16 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "실시간 관제 · CSI-Guard" },
+      { title: "모니터링 · WIFI-GUARD" },
       { name: "description", content: "Wi-Fi CSI 기반 비접촉식 낙상 감지 통합 모니터링 대시보드" },
-      { property: "og:title", content: "실시간 관제 · CSI-Guard" },
+      { property: "og:title", content: "모니터링 · WIFI-GUARD" },
       {
         property: "og:description",
         content: "Wi-Fi CSI 기반 비접촉식 낙상 감지 통합 모니터링 대시보드",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:title", content: "실시간 관제 · CSI-Guard" },
+      { name: "twitter:title", content: "모니터링 · WIFI-GUARD" },
       {
         name: "twitter:description",
         content: "Wi-Fi CSI 기반 비접촉식 낙상 감지 통합 모니터링 대시보드",
@@ -38,7 +38,8 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     ],
     links: [
       { rel: "stylesheet", href: appCss },
-      { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
+      { rel: "icon", href: "/wifi-guard-logo.png", type: "image/png" },
+      { rel: "apple-touch-icon", href: "/wifi-guard-logo.png" },
     ],
   }),
   shellComponent: RootShell,

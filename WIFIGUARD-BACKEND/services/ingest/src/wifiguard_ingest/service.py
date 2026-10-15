@@ -14,6 +14,9 @@ from typing import Any
 
 from .cache import LiveCache, LiveHub
 from .consumers import IngestConsumer
+from .fall_sink import FallEventSink
+from .fall_state import FallStateManager
+from .fall_notification import FallNotificationDispatcher
 from .mqtt_bridge import MqttBridge
 from .presence_sink import PresenceSink
 from .settings import IngestSettings
@@ -34,8 +37,12 @@ class IngestService:
         self.hub = LiveHub()
         self.presence_sink: PresenceSink | None = None
         self.telemetry_sink = TelemetrySink()
+        self.fall_sink = FallEventSink()
+        self.fall_state = FallStateManager(self.settings.fall_cooldown_seconds)
+        self.fall_notification = FallNotificationDispatcher()
         self.bridge: MqttBridge | None = None
         self.consumer: IngestConsumer | None = None
+        self.command_dispatcher = None
         self._sweep_stop = threading.Event()
         self._sweep_thread: threading.Thread | None = None
         self._started = False
@@ -45,6 +52,11 @@ class IngestService:
         if self._started:
             return
         s = self.settings
+        if s.local_enabled:
+            if len(s.local_edge_token.encode("utf-8")) < 32 or "REPLACE" in s.local_edge_token:
+                raise ValueError("LOCAL_EDGE_TOKEN must be at least 32 bytes")
+            if s.mqtt_enabled or s.kafka_enabled:
+                raise ValueError("local ingest cannot run alongside MQTT/Kafka ingest")
         log.info("인제스트 기동: %s", s.describe())
 
         if loop is not None:
@@ -58,19 +70,29 @@ class IngestService:
             )
             self.presence_sink.start()
 
-        if s.kafka_enabled:
-            self.consumer = IngestConsumer(
+        if s.kafka_enabled or s.local_enabled:
+            from .local import LocalConsumer
+            consumer_class = LocalConsumer if s.local_enabled else IngestConsumer
+            self.consumer = consumer_class(
                 s,
                 cache=self.cache,
                 hub=self.hub,
                 presence_sink=self.presence_sink,
                 telemetry_sink=self.telemetry_sink,
+                fall_sink=self.fall_sink,
+                fall_state=self.fall_state,
+                fall_notification=self.fall_notification,
             )
-            self.consumer.start()
+            if s.kafka_enabled:
+                self.consumer.start()
 
         if s.mqtt_enabled:
             self.bridge = MqttBridge(s)
             self.bridge.start()
+            if s.kafka_enabled:
+                from .remote_control import CommandDispatcher
+                self.command_dispatcher = CommandDispatcher(self.bridge)
+                self.command_dispatcher.start()
 
         if s.any_enabled:
             self._sweep_thread = threading.Thread(
@@ -88,12 +110,15 @@ class IngestService:
         self._sweep_stop.set()
         if self._sweep_thread is not None:
             self._sweep_thread.join(timeout=2.0)
+        if self.command_dispatcher is not None:
+            self.command_dispatcher.stop()
         if self.bridge is not None:
             self.bridge.stop()
         if self.consumer is not None:
             self.consumer.stop()
         if self.presence_sink is not None:
             self.presence_sink.stop()   # 남은 배치를 비우고 끝낸다
+        self.fall_notification.stop()
         self._started = False
         log.info("인제스트 정지 완료: %s", self.status())
 
@@ -128,6 +153,8 @@ class IngestService:
             "consumer": self.consumer.status() if self.consumer else None,
             "presence_sink": self.presence_sink.status() if self.presence_sink else None,
             "telemetry_sink": self.telemetry_sink.status(),
+            "fall_sink": self.fall_sink.status(),
+            "fall_notification": self.fall_notification.status(),
         }
 
 

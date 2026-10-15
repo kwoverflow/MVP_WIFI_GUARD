@@ -72,6 +72,7 @@ def _compute_baseline_thresholds(
     k_mv: float,
     mv_floor: float,
     wander_baseline_floor: float,
+    require_valid: bool = False,
 ) -> tuple[float, float]:
     """Run the MV and wander signal chains over a captured baseline window and
     derive a threshold/baseline from each. Runs in a thread-pool executor
@@ -115,6 +116,8 @@ def _compute_baseline_thresholds(
         energy_band_high=cfg.wander_bandpass_high,
     )
 
+    if require_valid and (mv_result is None or wander_result is None or wander_result.band_energy is None):
+        raise ValueError("baseline signal computation did not produce both MV and Welch results")
     presence_mv_threshold = (
         derive_threshold(mv_result.moving_variance, k_mv, mv_floor)
         if mv_result is not None

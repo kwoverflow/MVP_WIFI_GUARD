@@ -1,4 +1,5 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { Link, createFileRoute } from "@tanstack/react-router";
+import { BellRing, Mail, Smartphone } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Header, SectionTitle } from "./index";
@@ -6,6 +7,7 @@ import { useAuth } from "@/api/auth";
 import { ApiError, apiFetch, USE_MOCK } from "@/api/client";
 import { useCreateRecipient, useDeleteRecipient, useUpdateRecipient } from "@/api/mutations";
 import { useRecipients, useResidents } from "@/api/queries";
+import { usePresentation } from "@/components/usePresentation";
 import {
   RECIPIENT_ROLES,
   RECIPIENT_ROLE_LABEL,
@@ -15,16 +17,18 @@ import {
 } from "@/lib/domain";
 
 export const Route = createFileRoute("/notifications")({
-  head: () => ({ meta: [{ title: "알림 게이트웨이 · CSI-Guard" }] }),
+  head: () => ({ meta: [{ title: "알림 설정 · WIFI-GUARD" }] }),
   component: NotificationsPage,
 });
 
-/** 편집 폼 — 서버 RecipientIn/Patch 대응. 채널: phone(SMS/ARS) + ntfy(Push). */
+/** 편집 폼 — 서버 RecipientIn/Patch 대응. 채널: SMTP email + ntfy mobile push. */
 interface RecipientDraft {
   id?: string;
   name: string;
   role: RecipientRole;
   phone: string;
+  email: string;
+  emailEnabled: boolean;
   sms: boolean;
   push: boolean;
   ars: boolean;
@@ -43,6 +47,8 @@ function toDraft(r: Recipient): RecipientDraft {
     name: r.name,
     role: r.role,
     phone: r.phone ?? "",
+    email: r.email ?? "",
+    emailEnabled: r.emailEnabled,
     sms: r.sms,
     push: r.push,
     ars: r.ars,
@@ -77,7 +83,9 @@ function NotificationsPage() {
     name: "",
     role: "FAMILY",
     phone: "",
-    sms: true,
+    email: "",
+    emailEnabled: true,
+    sms: false,
     push: true,
     ars: false,
     ntfyServer: DEFAULT_NTFY_SERVER,
@@ -91,6 +99,8 @@ function NotificationsPage() {
       name: d.name,
       role: d.role,
       phone: d.phone || null,
+      email: d.email || null,
+      emailEnabled: d.emailEnabled,
       sms: d.sms,
       push: d.push,
       ars: d.ars,
@@ -125,49 +135,58 @@ function NotificationsPage() {
   };
 
   const testOne = async (r: Recipient) => {
-    if (USE_MOCK) return toast("목업 모드에서는 발송하지 않습니다");
+    if (USE_MOCK) return toast("데모 모드에서는 외부 알림을 발송하지 않습니다");
+    if (!window.confirm("등록된 수신자에게 테스트 알림을 보낼까요?")) return;
     try {
-      await apiFetch<void>(`/recipients/${r.id}/test`, { method: "POST" });
-      toast("테스트 발송");
-    } catch (err) {
-      toast.error(
-        err instanceof ApiError && err.status === 501
-          ? "알림 발송은 다음 단계(알림 서비스)에서 제공됩니다"
-          : String(err),
+      const result = await apiFetch<{ channels: { channel: string }[] }>(
+        `/recipients/${r.id}/test`,
+        { method: "POST" },
       );
+      toast.success(`테스트 발송 성공 · ${result.channels.map((item) => item.channel).join(", ")}`);
+    } catch (err) {
+      toast.error(err instanceof ApiError || err instanceof Error ? err.message : "발송 실패");
     }
   };
 
   return (
     <div>
-      <Header title="알림 게이트웨이" />
+      <Header title="알림 설정" />
       <div className="p-6 space-y-6 max-w-6xl">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight mb-1">Notification Gateway</h1>
+          <h1 className="text-2xl font-semibold tracking-tight mb-1">알림 수신자</h1>
           <p className="text-sm text-muted">
             {isFacility
-              ? "입소자별 알림 수신자를 관리합니다 · 낙상이 감지되면 해당 입소자에 등록된 가족·요양사에게만 즉시 알립니다."
-              : "낙상이 감지되면 등록된 모든 수신자의 휴대폰으로 즉시 알림을 보냅니다."}
+              ? "입소자별로 낙상 알림을 받을 연락처를 관리합니다."
+              : "낙상 알림을 받을 연락처와 전송 방법을 관리합니다."}
           </p>
         </div>
 
-        <section className="grid grid-cols-3 gap-4">
-          <ChannelCard title="SMS" desc="문자 메시지로 알림 발송 (전화번호)" status="planned" />
-          <ChannelCard title="Push (ntfy)" desc="NTFY 앱 구독 코드로 푸시 알림" status="planned" />
-          <ChannelCard title="ARS Escalation" desc="미확인 시 자동 음성 전화" status="planned" />
+        <section className="mobile-notification-intro mobile-only" aria-label="휴대폰 알림 안내">
+          <span className="mobile-record-symbol">
+            <BellRing size={24} />
+          </span>
+          <h2>알림을 놓치지 않도록</h2>
+          <p>받은 낙상 알림과 대응 결과를 확인하고, 알림을 받을 수신자를 관리하세요.</p>
+          <Link to="/history" className="primary-button">
+            받은 알림 보기
+          </Link>
+          <small>
+            잠금화면 푸시는 Android 앱 또는 ntfy 앱에서 수신합니다. 이 웹 화면은 알림 조회·처리
+            화면입니다.
+          </small>
         </section>
 
         {!isFacility && (
-          <div className="bg-surface border border-border rounded-lg p-4 space-y-2">
-            <div className="text-sm font-semibold">푸시 알림 받는 방법 (NTFY 앱)</div>
+          <details className="bg-surface border border-border rounded-lg p-4 space-y-2">
+            <summary className="text-sm font-semibold cursor-pointer">ntfy 앱 연결 안내</summary>
             <ol className="text-xs text-muted space-y-1 list-decimal list-inside">
               <li>휴대폰 앱 스토어에서 "ntfy"를 검색해 NTFY 앱을 설치합니다.</li>
-              <li>아래 "+ 수신자 추가"에서 Push 채널을 켜면 구독 코드가 자동 생성됩니다.</li>
+              <li>아래 "+ 수신자 추가"에서 휴대폰 알림을 켜면 구독 코드가 자동 생성됩니다.</li>
               <li>
                 그 코드를 NTFY 앱에서 구독하면, 알림 서비스가 켜진 뒤 낙상 감지 시 푸시를 받습니다.
               </li>
             </ol>
-          </div>
+          </details>
         )}
 
         {isFacility ? (
@@ -176,7 +195,7 @@ function NotificationsPage() {
               <div className="flex justify-between items-center mb-3">
                 <SectionTitle>입소자별 알림 수신자</SectionTitle>
                 <span className="text-[10px] font-mono text-muted uppercase">
-                  {residents.length} residents
+                  {residents.length}명
                 </span>
               </div>
               <div className="space-y-4">
@@ -279,7 +298,7 @@ function ResidentGroup({
             {resident.age ?? "—"}세 · 담당 {resident.caregiver ?? "—"}
           </span>
           <span className="text-[9px] font-mono uppercase px-1.5 py-0.5 rounded border border-border text-muted">
-            {recipients.length} recipients
+            {recipients.length}명
           </span>
         </div>
         <button
@@ -316,56 +335,129 @@ function RecipientTable({
   emptyText: string;
   embedded?: boolean;
 }) {
+  const presentation = usePresentation();
   return (
-    <div className={embedded ? "" : "bg-surface border border-border rounded-lg overflow-hidden"}>
-      <table className="w-full text-left text-sm">
+    <div
+      className={
+        embedded
+          ? ""
+          : "recipient-table-wrap bg-surface border border-border rounded-lg overflow-hidden"
+      }
+    >
+      <div className="mobile-record-list mobile-only" aria-label="알림 수신자 목록">
+        {rows.map((r) => (
+          <article key={r.id} className="mobile-record-card">
+            <div className="mobile-record-heading">
+              <span className="mobile-record-symbol">
+                <BellRing size={20} />
+              </span>
+              <div>
+                <small>{RECIPIENT_ROLE_LABEL[r.role]}</small>
+                <h2>{presentation.label(r.name, "recipient")}</h2>
+              </div>
+              <span className={`status-pill ${r.enabled ? "tone-success" : "tone-neutral"}`}>
+                {r.enabled ? "사용 중" : "중지됨"}
+              </span>
+            </div>
+            <div className="mobile-recipient-channels">
+              {r.emailEnabled && (
+                <span>
+                  <Mail size={15} />
+                  이메일
+                </span>
+              )}
+              {r.push && (
+                <span>
+                  <Smartphone size={15} />
+                  휴대폰
+                </span>
+              )}
+              {r.sms && <span>문자</span>}
+              {r.ars && <span>전화</span>}
+              {!r.emailEnabled && !r.push && !r.sms && !r.ars && <span>전송 방법 미설정</span>}
+            </div>
+            {r.email && (
+              <p className="mobile-recipient-address">
+                {presentation.demo && r.email.endsWith("@example.invalid")
+                  ? "이메일 등록"
+                  : r.email}
+              </p>
+            )}
+            {r.phone && <p className="mobile-recipient-address">{r.phone}</p>}
+            <div className="mobile-record-actions">
+              <button className="secondary-button" onClick={() => onEdit(r)}>
+                수신 설정
+              </button>
+              <button className="text-button" onClick={() => onTest(r)}>
+                알림 확인
+              </button>
+              <button className="text-button" onClick={() => onDelete(r)}>
+                삭제
+              </button>
+            </div>
+          </article>
+        ))}
+        {!rows.length && (
+          <div className="mobile-empty-card">
+            <p>{emptyText}</p>
+          </div>
+        )}
+      </div>
+      <table className="desktop-only w-full text-left text-sm">
         <thead>
           <tr className="text-[10px] text-muted border-b border-border bg-background/30 font-mono">
-            <th className="p-3 font-medium uppercase">Name</th>
-            <th className="p-3 font-medium uppercase">Role</th>
-            <th className="p-3 font-medium uppercase">Phone / ntfy</th>
-            <th className="p-3 font-medium uppercase">Channels</th>
-            <th className="p-3 font-medium uppercase">Status</th>
-            <th className="p-3 font-medium uppercase text-right">Actions</th>
+            <th className="p-3 font-medium uppercase">이름</th>
+            <th className="p-3 font-medium uppercase">관계</th>
+            <th className="p-3 font-medium uppercase">연락처</th>
+            <th className="p-3 font-medium uppercase">알림 방법</th>
+            <th className="p-3 font-medium uppercase">수신 상태</th>
+            <th className="p-3 font-medium uppercase text-right">관리</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-border">
           {rows.map((r) => (
             <tr key={r.id} className={`hover:bg-black/5 ${r.enabled ? "" : "opacity-50"}`}>
-              <td className="p-3 font-medium">{r.name}</td>
+              <td className="p-3 font-medium">{presentation.label(r.name, "recipient")}</td>
               <td className="p-3 text-sm">{RECIPIENT_ROLE_LABEL[r.role]}</td>
               <td className="p-3 font-mono text-xs text-muted">
                 <div>{r.phone || "—"}</div>
-                {r.ntfyTopic && <div className="text-[10px]">ntfy: {r.ntfyTopic}</div>}
+                {r.email && (
+                  <div className="text-[10px]">
+                    {presentation.demo && r.email.endsWith("@example.invalid")
+                      ? "이메일 등록"
+                      : r.email}
+                  </div>
+                )}
               </td>
               <td className="p-3">
                 <div className="flex gap-1">
-                  {r.sms && <Chip>SMS</Chip>}
-                  {r.push && <Chip>PUSH</Chip>}
-                  {r.ars && <Chip>ARS</Chip>}
+                  {r.sms && <Chip>문자</Chip>}
+                  {r.emailEnabled && <Chip>이메일</Chip>}
+                  {r.push && <Chip>휴대폰</Chip>}
+                  {r.ars && <Chip>전화</Chip>}
                 </div>
               </td>
               <td className="p-3 text-[10px] font-mono uppercase text-muted">
-                {r.enabled ? "enabled" : "disabled"}
+                {r.enabled ? "사용 중" : "중지됨"}
               </td>
               <td className="p-3 text-right space-x-2">
                 <button
                   onClick={() => onTest(r)}
                   className="text-[10px] font-mono uppercase text-muted hover:text-foreground"
                 >
-                  test
+                  알림 확인
                 </button>
                 <button
                   onClick={() => onEdit(r)}
                   className="text-[10px] font-mono uppercase text-muted hover:text-foreground"
                 >
-                  edit
+                  수정
                 </button>
                 <button
                   onClick={() => onDelete(r)}
                   className="text-[10px] font-mono uppercase text-primary"
                 >
-                  delete
+                  삭제
                 </button>
               </td>
             </tr>
@@ -379,31 +471,6 @@ function RecipientTable({
           )}
         </tbody>
       </table>
-    </div>
-  );
-}
-
-/** 채널 카드 — 실제 발송 서비스는 다음 단계. 장식용 ACTIVE 표시 대신 도입 예정을 명시한다. */
-function ChannelCard({
-  title,
-  desc,
-  status,
-}: {
-  title: string;
-  desc: string;
-  status: "active" | "planned";
-}) {
-  return (
-    <div className="bg-surface border border-border rounded p-4">
-      <div className="flex justify-between items-start mb-2">
-        <div className="text-sm font-semibold">{title}</div>
-        <span
-          className={`text-[10px] font-mono uppercase px-2 py-0.5 rounded border ${status === "active" ? "text-success border-success/30 bg-success/10" : "text-muted border-border"}`}
-        >
-          {status === "active" ? "ACTIVE" : "도입 예정"}
-        </span>
-      </div>
-      <p className="text-[11px] text-muted font-mono">{desc}</p>
     </div>
   );
 }
@@ -436,7 +503,7 @@ function EditModal({
     <div className="fixed inset-0 bg-black/70 z-40 flex items-center justify-center p-6">
       <div className="bg-surface border border-border rounded-lg max-w-md w-full">
         <div className="p-4 border-b border-border">
-          <h3 className="text-sm font-mono uppercase tracking-widest">Recipient</h3>
+          <h3 className="text-sm font-mono uppercase tracking-widest">수신자 정보</h3>
         </div>
         <div className="p-6 space-y-4">
           {isFacility && (
@@ -475,7 +542,7 @@ function EditModal({
               ))}
             </select>
           </F>
-          <F label="전화번호 (SMS · ARS)">
+          <F label="전화번호">
             <input
               value={r.phone}
               onChange={(e) => setR({ ...r, phone: e.target.value })}
@@ -483,15 +550,24 @@ function EditModal({
               className={cls}
             />
           </F>
+          <F label="이메일">
+            <input
+              type="email"
+              value={r.email}
+              onChange={(e) => setR({ ...r, email: e.target.value })}
+              placeholder="caregiver@example.com"
+              className={cls}
+            />
+          </F>
           <F label="채널">
-            <div className="flex gap-4 text-sm">
+            <div className="flex flex-wrap gap-4 text-sm">
               <label className="flex items-center gap-2">
                 <input
                   type="checkbox"
-                  checked={r.sms}
-                  onChange={(e) => setR({ ...r, sms: e.target.checked })}
+                  checked={r.emailEnabled}
+                  onChange={(e) => setR({ ...r, emailEnabled: e.target.checked })}
                 />
-                SMS
+                이메일
               </label>
               <label className="flex items-center gap-2">
                 <input
@@ -499,21 +575,13 @@ function EditModal({
                   checked={r.push}
                   onChange={(e) => setR({ ...r, push: e.target.checked })}
                 />
-                Push
-              </label>
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={r.ars}
-                  onChange={(e) => setR({ ...r, ars: e.target.checked })}
-                />
-                ARS
+                휴대폰 알림
               </label>
             </div>
           </F>
           {r.push && (
             <>
-              <F label="ntfy 구독 코드 (Push)">
+              <F label="휴대폰 알림 구독 코드">
                 <input
                   value={r.ntfyTopic}
                   onChange={(e) => setR({ ...r, ntfyTopic: e.target.value })}
@@ -521,7 +589,7 @@ function EditModal({
                   className={cls}
                 />
               </F>
-              <F label="ntfy 서버">
+              <F label="알림 서버 주소">
                 <input
                   value={r.ntfyServer}
                   onChange={(e) => setR({ ...r, ntfyServer: e.target.value })}
@@ -547,14 +615,19 @@ function EditModal({
             onClick={onClose}
             className="px-4 py-2 border border-border rounded text-xs font-mono uppercase text-muted"
           >
-            Cancel
+            취소
           </button>
           <button
             onClick={() => onSave(r)}
-            disabled={!r.name || busy}
+            disabled={
+              !r.name ||
+              busy ||
+              (r.emailEnabled && !r.email.trim()) ||
+              (r.push && !r.ntfyTopic.trim())
+            }
             className="px-4 py-2 bg-primary text-primary-foreground rounded text-xs font-mono uppercase font-bold disabled:opacity-40"
           >
-            Save
+            저장
           </button>
         </div>
       </div>

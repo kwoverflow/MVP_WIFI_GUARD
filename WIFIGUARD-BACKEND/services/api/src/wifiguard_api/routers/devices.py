@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime, timedelta
+from typing import Any, Literal
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy import select
@@ -9,13 +12,36 @@ from sqlalchemy.orm import Session
 
 from wifiguard_contracts import topics
 from wifiguard_contracts.api import DeviceIn, DeviceOut, DevicePatch, ErrorOut
-from wifiguard_db.models import Device, ResidentDevice
+from wifiguard_db.models import Device, ResidentDevice, EdgeCommand
+from wifiguard_db.models.edge_command import ACTIVE_COMMAND_STATES
+from wifiguard_contracts.control import CalibrationRequest, PresenceSettings
 
 from ..deps import Scope, add_log, get_db, get_scope, scope_filter, scoped_get, stamp_scope
 from ..errors import ApiError
 
 router = APIRouter(prefix="/devices", tags=["devices"])
 _ERR = {401: {"model": ErrorOut}, 404: {"model": ErrorOut}}
+
+
+class RemoteCommandIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    action: Literal["calibrate", "set_config", "ping"]
+    args: dict[str, Any] = {}
+
+
+class RemoteCommandOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    device_id: uuid.UUID
+    action: str
+    state: str
+    created_at: datetime
+    expires_at: datetime
+    attempts: int
+    stage: str | None
+    progress: float | None
+    result: dict | None
+    error: str | None
 
 
 def scope_tenant_id(scope: Scope) -> str:
@@ -123,13 +149,81 @@ def get_device(device_id: uuid.UUID, scope: Scope = Depends(get_scope), db: Sess
     return to_out(scoped_get(db, Device, device_id, scope, what="장치"))
 
 
+@router.get("/{device_id}/commands", response_model=list[RemoteCommandOut], responses=_ERR)
+def list_commands(device_id: uuid.UUID, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    scoped_get(db, Device, device_id, scope, what="장치")
+    return list(db.execute(select(EdgeCommand).where(EdgeCommand.device_id == device_id)
+                           .order_by(EdgeCommand.created_at.desc()).limit(20)).scalars())
+
+
+@router.post("/{device_id}/commands", response_model=RemoteCommandOut, status_code=202,
+             responses={**_ERR, 403: {"model": ErrorOut}, 409: {"model": ErrorOut}, 422: {"model": ErrorOut}})
+def queue_command(device_id: uuid.UUID, body: RemoteCommandIn,
+                  scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    dev = scoped_get(db, Device, device_id, scope, what="장치")
+    if not scope.can_edit_config():
+        raise ApiError(403, "FORBIDDEN", "장치 제어 권한이 없습니다.")
+    if dev.connection != "MQTT" or dev.mqtt_topic != issue_mqtt_topic(scope, dev.id):
+        raise ApiError(409, "REMOTE_DEVICE_REQUIRED", "이 계정에 발급된 MQTT 장치만 원격 제어할 수 있습니다.")
+    try:
+        if body.action == "calibrate":
+            args = CalibrationRequest.model_validate(body.args).model_dump()
+            if args["empty_room_confirmed"] is not True:
+                raise ValueError("빈방 확인 필요")
+        elif body.action == "set_config":
+            args = PresenceSettings.model_validate(body.args).model_dump()
+        else:
+            if body.args:
+                raise ValueError("ping takes no arguments")
+            args = {}
+    except (ValidationError, ValueError) as exc:
+        raise ApiError(422, "INVALID_COMMAND_ARGS", "명령 인수를 확인하세요. 빈방 보정은 공간을 비운 뒤 확인해야 합니다.") from exc
+    # Serialize requests for this device. The partial unique index also protects
+    # against a concurrent API process and unanticipated writers.
+    db.execute(select(Device.id).where(Device.id == dev.id).with_for_update()).one()
+    active = db.execute(select(EdgeCommand.id).where(EdgeCommand.device_id == dev.id,
+                           EdgeCommand.state.in_(ACTIVE_COMMAND_STATES))).first()
+    if active:
+        raise ApiError(409, "COMMAND_IN_PROGRESS", "이전 명령의 장치 응답을 기다리는 중입니다.")
+    now = datetime.now(UTC)
+    cmd = EdgeCommand(id=uuid.uuid4(), device_id=dev.id, actor_user_id=scope.user_id,
+                      tenant_id=scope_tenant_id(scope), action=body.action, args=args,
+                      state="PENDING", created_at=now,
+                      expires_at=now + timedelta(seconds=180 if body.action == "calibrate" else 60),
+                      next_attempt_at=now, attempts=0, last_ack_seq=-1)
+    db.add(cmd)
+    add_log(db, scope, "WARN", f"[{dev.name}] 원격 {body.action} 요청 · 장치 응답 대기 · {cmd.id}", device_id=dev.id)
+    db.commit()
+    return cmd
+
+
 @router.patch("/{device_id}", response_model=DeviceOut, responses={**_ERR, 409: {"model": ErrorOut}})
 def patch_device(device_id: uuid.UUID, body: DevicePatch, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)) -> DeviceOut:
     dev = scoped_get(db, Device, device_id, scope, what="장치")
     data = body.model_dump(exclude_unset=True)
+    if dev.connection in ("SPI", "MQTT") or data.get("connection") in ("SPI", "MQTT"):
+        measured = {"calibrating", "calibration_stage", "calibration_progress", "presence_mv_threshold", "wander_baseline"}
+        if measured.intersection(data):
+            raise ApiError(409, "REAL_CALIBRATION_ONLY", "보정 결과는 실제 장치 실행·응답으로만 저장합니다.")
+    if db.execute(select(EdgeCommand.id).where(EdgeCommand.device_id == dev.id,
+                  EdgeCommand.state.in_(ACTIVE_COMMAND_STATES))).first():
+        raise ApiError(409, "COMMAND_IN_PROGRESS", "장치 응답 대기 중에는 장치 설정을 바꿀 수 없습니다.")
+    from .local_control import binding, enabled
+    bound = binding() if enabled() else None
+    if bound and bound["device_id"] == str(dev.id) and data.get("connection", "SPI") != "SPI":
+        raise ApiError(409, "LOCAL_DEVICE_BOUND", "Pi5에 연결된 장치의 연결 방식을 바꿀 수 없습니다.")
     prev_stage = dev.calibration_stage
+    previous_connection = dev.connection
     for key, value in data.items():
         setattr(dev, key, value.strip() if isinstance(value, str) else value)
+    if previous_connection != dev.connection:
+        # A legacy SERIAL calibration may not be relabelled as MQTT/SPI proof.
+        dev.calibrating = False
+        dev.calibration_stage = "IDLE"
+        dev.calibration_progress = 0
+        dev.presence_mv_threshold = None
+        dev.wander_baseline = None
+        dev.calibration_run_id = None
     _validate_target(dev.connection, dev.mqtt_topic, dev.serial_port)
     try:
         db.flush()
@@ -149,6 +243,10 @@ def patch_device(device_id: uuid.UUID, body: DevicePatch, scope: Scope = Depends
 @router.delete("/{device_id}", status_code=status.HTTP_204_NO_CONTENT, responses={**_ERR, 409: {"model": ErrorOut}})
 def delete_device(device_id: uuid.UUID, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)) -> Response:
     dev = scoped_get(db, Device, device_id, scope, what="장치")
+    from .local_control import binding, enabled
+    bound = binding() if enabled() else None
+    if bound and bound["device_id"] == str(dev.id):
+        raise ApiError(409, "LOCAL_DEVICE_BOUND", "Pi5에 다른 SPI 장치를 연결한 뒤 이 장치를 삭제하세요.")
     primary_of = list(db.execute(
         select(ResidentDevice.resident_id).where(ResidentDevice.device_id == dev.id, ResidentDevice.is_primary.is_(True))
     ).scalars())

@@ -19,6 +19,9 @@ import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { useLive } from "@/api/realtime/useLiveStream";
+import { apiFetch } from "@/api/client";
+import { authStore } from "@/api/auth";
+import { reconcileAlarm } from "@/lib/persisted-alarm";
 import { qk } from "@/api/keys";
 import { useResidents } from "@/api/queries";
 import { alarmStore } from "@/lib/alarm-store";
@@ -44,7 +47,7 @@ export function LiveBridge() {
       const resident = residents?.find((r) => r.deviceId === device.device_id);
       const occurredAt = fall?.updated_at ?? new Date().toISOString();
       const event: FallEvent = {
-        id: `live-${device.device_id}-${occurredAt}`,
+        id: fall?.fall_event_id ?? `live-${device.device_id}-${occurredAt}`,
         residentId: resident?.id ?? null,
         residentName: resident?.name ?? "미지정 거주자",
         room: resident?.room ?? "",
@@ -60,7 +63,15 @@ export function LiveBridge() {
         ownerUserId: null,
         createdAt: occurredAt,
       };
-      alarmStore.raise(event);
+      if (fall?.fall_event_id) {
+        // A reconnect snapshot can contain a historical FALL that another
+        // operator has already handled. The persisted response is authoritative.
+        const account = authStore.get().user?.id;
+        void reconcileAlarm(event, () => apiFetch<FallEvent>(`/falls/${fall.fall_event_id}`),
+          alarmStore.raise, () => account != null && authStore.get().user?.id === account);
+      } else {
+        alarmStore.raise(event);
+      }
 
       // 서버가 fall_events 행을 만들었을 것이다(M5). 이력·로그를 다시 읽어
       // 화면의 임시 이벤트가 실제 행으로 대체되게 한다.

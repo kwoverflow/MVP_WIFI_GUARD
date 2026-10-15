@@ -3,6 +3,7 @@
  * 선택은 모듈 로드 시 한 번(빌드 상수)이라 훅 호출 순서가 바뀌지 않는다.
  */
 import { useQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
 
 import type {
   Device,
@@ -23,7 +24,8 @@ import { useAuth } from "../auth";
 import { USE_MOCK, apiFetch } from "../client";
 import { qk } from "../keys";
 import * as mock from "../mock/hooks";
-import { useDetectionState, useMvSeries } from "../realtime/useLiveStream";
+import { useDetectionState, useLive, useMvSeries } from "../realtime/useLiveStream";
+import { withLiveResidents } from "../realtime/residents";
 import { ready, type QueryResultLike } from "../types";
 
 function useAuthed(): boolean {
@@ -45,11 +47,15 @@ export const useDevices: () => QueryResultLike<Device[]> =
 // ── residents ───────────────────────────────────────────────────────
 function useResidentsReal(): QueryResultLike<Resident[]> {
   const enabled = useAuthed();
-  return useQuery({
+  const live = useLive();
+  const query = useQuery({
     queryKey: qk.residents(),
     queryFn: () => apiFetch<Resident[]>("/residents"),
     enabled,
   });
+  const data = useMemo(() => query.data ? withLiveResidents(query.data, live.status === "open" ? live.devices : {}) : undefined,
+    [query.data, live.status, live.devices]);
+  return { ...query, data };
 }
 export const useResidents: () => QueryResultLike<Resident[]> =
   import.meta.env.VITE_USE_MOCK === "1" ? mock.useResidents : useResidentsReal;

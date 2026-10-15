@@ -1,13 +1,28 @@
-# MVP_WIFI_GUARD — WIFI-GUARD 4-레포 분리 작업장
+# MVP_WIFI_GUARD — WIFI-GUARD 관제와 엣지 모노레포
+
+## 2026년 10월 클라우드 관제 고도화
+
+최신 배포·검증 범위는 [클라우드 관제 고도화와 배포 안내](DOCS/MLOPS_PLATFORM_UPGRADE_20261015.md)를 기준으로 한다. Pi3 수집→MQTT→Kafka→실제 모델→DB·이메일·FCM 구조에 PC·모바일 웹 UI, 원격 빈방 보정·감지 설정 명령과 ACK, MLOps·자원 화면을 연결했다. Pi5 단독 배포본과 팀 PR #2는 별도로 유지한다.
+
+개인 포크의 오래된 `main`을 따라잡는 기반 통합도 포함한다. 자동 재학습·운영 자동 배포는 완료 기능이 아니며, 저장된 학습 산출물과 현재 실행 상태를 구분한다. 아래의 초기 분리 설명·실측 수치는 각 작성일의 이력이다.
+
+## 초기 분리 이력
 
 현행 단일 레포(`Guardian Angel Alert`: 로컬 FastAPI + TanStack 목업)를 **엣지 / 클라우드 / 프론트엔드 / 펌웨어** 4갈래로 쪼개기 위한 로컬 스테이징 디렉토리다.
 
-> **이 디렉토리는 부모 레포에서 `.gitignore` 처리되어 있다.** 각 하위 폴더는 준비가 끝나면 **독립 GitHub 레포**로 올라간다. 부모 레포(Lovable 동기화 브랜치)에 절대 커밋하지 말 것 — ESP 하나만 1.6GB다.
+> 초기에는 분리용 작업장이었으나 현재는 이 저장소의 하위 패키지로 관리한다. 빌드 캐시·가중치·비밀키·실데이터는 포함하지 않는다.
 
 > ## 📄 현재 구현 상태의 정본: [DOCS/CSI-Guard_구현현황_v2.0_20260910.md](DOCS/CSI-Guard_구현현황_v2.0_20260910.md)
 >
 > 무엇이 동작하고 무엇이 없는지, 확정된 아키텍처 결정 5가지, 실측 수치, 남은 작업과 리스크,
 > AWS 현황을 한 문서에 정리했다. **처음 보는 사람은 여기부터.**
+>
+> 모델 실행 경로의 최신 보완 결과는 [DOCS/WIFI_GUARD_모델_E2E_준비결과_20260916.md](DOCS/WIFI_GUARD_모델_E2E_준비결과_20260916.md)에 있다.
+
+> ## 🔀 이번 통합 변경과 머지 인계: [MERGE_INTEGRATION.md](MERGE_INTEGRATION.md)
+>
+> Batch8 SPI, Raspberry Pi 전송 어댑터, 새 CSI 낙상 학습/예측 패키지의 변경 범위와
+> 검증 결과, 아직 완료되지 않은 운영 추론 연결을 구분해 기록했다.
 
 배치 작업일: 2026-09-03 · 명세 작성일: 2026-08-04 (v1.0) · 검토 보고서 [REVIEW_20260907.md](REVIEW_20260907.md) (§8 클라우드 기동, §9 2차 구현) · 실시간 파이프라인 계획 `~/.claude/plans/rosy-wobbling-balloon.md`
 
@@ -16,13 +31,14 @@
 ## 레포 4종
 
 ```
-[ESP32-C5 TX] ──ESP-NOW 5GHz──► [ESP32-C5 RX] ──UART 2Mbaud──► [Raspberry Pi] ──MQTT/TLS──► [Cloud] ──REST/WS──► [Web]
+[ESP32-C5 TX] ──UDP 320Hz──► [ESP32-C5 RX] ──WGSP Batch8/SPI──► [Raspberry Pi] ──MQTT/TLS──► [Cloud] ──REST/WS──► [Web]
       └──────── WIFIGUARD-ESP ────────┘                 WIFIGUARD-RASPBERRY       WIFIGUARD-BACKEND   WIFIGUARD-FRONTEND
 ```
 
-> 명세는 ESP↔Pi를 **SPI**로 규정하지만 **펌웨어에 SPI slave 코드가 없다.** 실제로 동작하는 유일한
-> 경로는 UART이며, Pi의 SPI 프로토콜 정의(CSI 128B/64서브캐리어)는 펌웨어가 실제로 내보내는
-> 612B/306서브캐리어를 담지 못한다. SPI 전환은 후속 과제다(계획서 R5).
+> 새 기본 실기 경로는 **WGSP v1 Batch8 SPI**다. 576B 프레임 8개를 4608B 한 트랜잭션으로
+> 읽으며, 6MHz·READY BCM25·Linux direct ioctl을 사용한다. 기존 UART·replay 경로도 삭제하지
+> 않고 호환 경로로 유지한다. 30초 실측에서 19,268프레임, 320.014Hz, MQTT 발행 168건,
+> 전송 오류 0 및 Kafka offset 증가를 확인했다.
 >
 > **UART는 921600 → 2,000,000으로 올렸다(2026-09-10).** 921600은 660B 프레임 기준 약 140 fps가
 > 상한이라 실측 수신율 약 167Hz를 감당하지 못했다. 펌웨어 실측도 같은 결론이다(UART TX가 패킷당
@@ -31,10 +47,10 @@
 
 | 폴더 | 역할 | 명세 | 상태 | 크기 |
 |---|---|---|---|---:|
-| [WIFIGUARD-RASPBERRY/](WIFIGUARD-RASPBERRY/) | 엣지 — CSI 수집 · **재실감지** · 서브캐리어 선택·PCA 합성 · MQTT 업링크 | [raspberry](WIFIGUARD-RASPBERRY/docs/WIFI-GUARD_레포명세_raspberry_v1.0_20260804.md) | **엔트리포인트·설정·게이팅·MQTT 구현 완료(2026-09-10) — 브로커까지 실측 발행** · `pytest` 77 · Pi 없이 `--transport replay` 로 전 배선 구동 · 캘리브레이션 cmd·스풀·실기 미검증 | ~400KB |
-| [WIFIGUARD-BACKEND/](WIFIGUARD-BACKEND/) | 클라우드 — 서비스 API · DB · Kafka · **피처 변환 + 낙상 추론** · 알림 · MLOps | [backend](WIFIGUARD-BACKEND/docs/WIFI-GUARD_레포명세_backend_v1.0_20260804.md) | **서비스 API `/api/v1` + `/ws/live` + 인제스트(MQTT→Kafka→TimescaleDB→캐시) 구현 완료(2026-09-10)** · 계약 5종 · `pytest` 77 · AWS EC2 2대 기동 중(Kafka·MQTT 인스턴스는 M4) · **낙상 추론·알림 미구현** | ~112MB |
+| [WIFIGUARD-RASPBERRY/](WIFIGUARD-RASPBERRY/) | 엣지 — CSI 수집 · **재실감지** · 서브캐리어 선택·PCA 합성 · MQTT 업링크 | [raspberry](WIFIGUARD-RASPBERRY/docs/WIFI-GUARD_레포명세_raspberry_v1.0_20260804.md) | **Batch8 SPI·UART·replay 구현** · SPI→MQTT→Kafka 실측 · `pytest` 89 통과, 하드웨어 선택 테스트 2 skip · SPI train 제어·스풀은 후속 | ~400KB |
+| [WIFIGUARD-BACKEND/](WIFIGUARD-BACKEND/) | 클라우드 — 서비스 API · DB · Kafka · **피처 변환 + 낙상 추론** · 알림 · MLOps | [backend](WIFIGUARD-BACKEND/docs/WIFI-GUARD_레포명세_backend_v1.0_20260804.md) | API·WS·인제스트·라이브 추론·EDGE 낙상 저장·ntfy 라우팅 구현 · **실제 학습 가중치만 별도 인수 필요** | ~112MB |
 | [WIFIGUARD-FRONTEND/](WIFIGUARD-FRONTEND/) | 웹 관제 대시보드 — 클라우드 실데이터 | [frontend](WIFIGUARD-FRONTEND/docs/WIFI-GUARD_레포명세_frontend_v1.0_20260804.md) | **전 라우트 실 API + `/ws/live` 실시간 재실 연결 완료(2026-09-10)** · Vitest 34 · HOME·FACILITY 모두 동작 · 낙상 축은 추론(M5) 대기라 "감지 미동작" | ~3MB |
-| [WIFIGUARD-ESP/](WIFIGUARD-ESP/) | 펌웨어 — ESP32-C5 송수신기 | [esp](WIFIGUARD-RASPBERRY/docs/WIFI-GUARD_레포명세_esp_v1.0_20260804.md) | `csi_fall/esp32c5/` 원본 복사 · build/venv/stride CSV **정리 완료(1.6GB → 23MB, 2026-09-08)** · `git init`은 원본 미커밋 변경 정리(REVIEW P7) 후 | ~23MB |
+| [WIFIGUARD-ESP/](WIFIGUARD-ESP/) | 펌웨어 — ESP32-C5 송수신기 | [esp](WIFIGUARD-RASPBERRY/docs/WIFI-GUARD_레포명세_esp_v1.0_20260804.md) | 기존 UART 유지 + 320Hz 송신기와 WGSP Batch8 SPI 수신기 추가 · 실기 경로 검증 | ~23MB |
 
 각 폴더의 `PORTING.md`가 **원본 → 목표 매핑 · 남은 작업 · 미결정 사항**을 담고 있다. `README.md`는 그 레포의 책임 경계와 실행법이다.
 
@@ -44,9 +60,13 @@
 
 1. **원본은 건드리지 않았다.** `Guardian Angel Alert/backend/`와 `src/`는 지금도 로컬에서 구동되는 현행 코드다. 여기 있는 것은 전부 **사본**이다.
 2. **명세 §6.1 매핑의 목표 경로에 바로 배치**했다. 스테이징 디렉토리를 따로 두지 않았다 — 어느 파일이 어디로 가는지는 각 `PORTING.md`가 기록한다.
-3. **신규 파이썬/TS 모듈 본문은 작성하지 않았다.** `csi_fall/csi_fall_monorepo/`가 `NotImplementedError` 스텁만 남기고 멈춘 전례가 있다. 설정 파일(compose, toml, requirements, .env.example, systemd)까지만 만들었다.
-4. **복사 중 가한 유일한 코드 수정**: RASPBERRY의 4개 파일에서 평평한 절대 import를 상대 import로 바꿨다 (`from presence import` → `from .presence import` 등). 원본과의 `diff`가 그 줄들뿐임을 확인했다.
-5. **모델 weights(89MB)는 BACKEND `_reference/`에 복사했다.** GitHub 100MB 한도에 근접하므로 분리 시 Git LFS 또는 MLflow+S3가 필요하다.
+3. 초기 분리 때는 설정 파일만 만들었지만, 이번 통합에서 **실제 동작 코드도 추가했다.** Raspberry에 WGSP Batch8 transport를 넣고 Backend에 독립 CSI 낙상 학습/예측 패키지를 배치했다. 스텁으로 남기지 않았고 테스트와 합성 데모로 실행을 확인했다.
+4. 기존 UART·replay·API·웹 경로는 삭제하지 않았다. Raspberry replay 스레드 종료 버그와 Frontend 포맷 오류처럼 회귀 테스트에서 확인된 문제만 최소 수정했다. 상세 변경 범위는 [MERGE_INTEGRATION.md](MERGE_INTEGRATION.md)에 있다.
+5. **실제 운영 모델 weights는 포함하지 않는다.** 체크포인트는 `WIFIGUARD-BACKEND/weights/model.pt`에 외부 주입하고 SHA-256을 검증한다. 형식과 인수 절차는 [MODEL_HANDOFF.md](WIFIGUARD-BACKEND/docs/MODEL_HANDOFF.md)에 있다.
+
+하드웨어 없는 적재 회귀는 `scripts/validate-mock-storage.ps1`로 실행한다. 계약 메시지 주입과
+Raspberry 합성 replay를 모두 MQTT→Kafka로 흘린 뒤, 고유 UUID의 Kafka 레코드를 다시 읽어
+스키마까지 검증한다.
 
 ---
 

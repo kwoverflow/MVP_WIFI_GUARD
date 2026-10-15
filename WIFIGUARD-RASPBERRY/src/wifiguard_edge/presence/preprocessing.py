@@ -7,6 +7,7 @@ reference/fall_detect/src/preprocessing.py(amfall 기반 CSI 전처리)에서 �
 """
 
 from typing import Any, Dict, Tuple
+from functools import lru_cache
 
 import numpy as np
 from scipy.ndimage import uniform_filter1d
@@ -68,6 +69,27 @@ def resample_signal(
     grid_us = 1_000_000.0 / fs_hz
     tolerance_us = tolerance_ms * 1000.0
 
+    # Common native 320 Hz input needs no inserted rows in this legacy chain.
+    # Avoid thousands of Python row copies without changing values or counters.
+    # np.rint and Python round both use ties-to-even for these float64 gaps.
+    gaps = np.diff(timestamps)
+    if len(timestamps) == len(signal_arr) and np.isfinite(gaps).all():
+        steps = np.maximum(1.0, np.rint(gaps / grid_us))
+        positive = gaps > 0
+        interpolatable = (
+            positive & (steps <= max_interp_gap_steps)
+            & (np.abs(gaps - steps * grid_us) <= tolerance_us)
+        )
+        if not np.any(interpolatable & (steps > 1)):
+            return signal_arr.copy(), {
+                "raw_samples": len(signal_arr),
+                "resampled_samples": len(signal_arr),
+                "interp_steps": 0,
+                "fallback_steps": int(np.count_nonzero(~interpolatable)),
+                "irregular_gaps": int(np.count_nonzero(positive & ~interpolatable)),
+                "nonpositive_gaps": int(np.count_nonzero(~positive)),
+            }
+
     rows = [signal_arr[0].astype(np.float32)]
     interp_steps = 0
     fallback_steps = 0
@@ -117,6 +139,14 @@ def resample_signal(
     return resampled, stats
 
 
+@lru_cache(maxsize=32)
+def _bandpass_coefficients(fs_hz, low_hz, high_hz, order):
+    # Cache only static filter design, never a signal/window/calibration result.
+    coefficients = signal.butter(order, [low_hz, high_hz], btype="band", fs=fs_hz, output="sos")
+    coefficients.flags.writeable = False
+    return coefficients
+
+
 def bandpass_filter(
     amp: np.ndarray,
     fs_hz: float = 320.0,
@@ -125,6 +155,8 @@ def bandpass_filter(
     order: int = 4,
 ) -> np.ndarray:
     """Zero-phase Butterworth bandpass filter (sosfiltfilt) applied along axis 0."""
-    sos = signal.butter(order, [low_hz, high_hz], btype="band", fs=fs_hz, output="sos")
+    # scipy's native SOS filter requires writable coefficients; do not expose
+    # or mutate the cached array, including concurrent motion/wander calls.
+    sos = _bandpass_coefficients(fs_hz, low_hz, high_hz, order).copy()
     filtered = signal.sosfiltfilt(sos, amp, axis=0)
     return filtered.astype(np.float32)

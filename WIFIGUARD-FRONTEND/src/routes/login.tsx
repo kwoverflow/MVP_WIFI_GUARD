@@ -3,9 +3,10 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { useAuth } from "@/api/auth";
 import { ApiError } from "@/api/client";
+import { BrandLogo } from "@/components/BrandLogo";
 
 export const Route = createFileRoute("/login")({
-  head: () => ({ meta: [{ title: "로그인 · CSI-Guard" }] }),
+  head: () => ({ meta: [{ title: "로그인 · WIFI-GUARD" }] }),
   component: LoginPage,
 });
 
@@ -15,6 +16,8 @@ function LoginPage() {
   const [busy, setBusy] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
+  const pc = import.meta.env.VITE_PC_SIMULATION === "1";
+  const local = import.meta.env.VITE_PI5_LOCAL === "1";
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -36,21 +39,32 @@ function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-6">
-      <div className="w-full max-w-md">
+    <div className="user-login-page min-h-screen flex items-center justify-center p-6">
+      <div className="user-login-card w-full max-w-md">
         <div className="mb-8 text-center">
-          <div className="font-mono font-bold text-2xl tracking-tighter">CSI-GUARD</div>
-          <p className="text-xs font-mono text-muted uppercase tracking-widest mt-1">
-            Fall Detection Console
-          </p>
+          <span className="login-brand-icon">
+            <BrandLogo />
+          </span>
+          <div className="font-bold text-2xl tracking-tight">WIFI-GUARD</div>
+          <p className="text-sm text-muted mt-2">비접촉 돌봄 모니터링</p>
+          {(pc || import.meta.env.VITE_USE_MOCK === "1") && (
+            <span className="demo-mode-badge mt-3">데모 모드</span>
+          )}
         </div>
         <form
           onSubmit={submit}
-          className="bg-surface border border-border rounded-lg p-6 space-y-4"
+          className="bg-surface border border-border rounded-xl p-7 space-y-5"
         >
           <div>
-            <label className="text-[10px] font-mono uppercase text-muted">이메일</label>
+            <h1 className="text-xl font-semibold">로그인</h1>
+            <p className="text-xs text-muted mt-2">내 공간의 상태와 알림을 확인하세요.</p>
+          </div>
+          <div>
+            <label htmlFor="login-email" className="text-xs text-muted">
+              이메일
+            </label>
             <input
+              id="login-email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               type="email"
@@ -60,8 +74,11 @@ function LoginPage() {
             />
           </div>
           <div>
-            <label className="text-[10px] font-mono uppercase text-muted">비밀번호</label>
+            <label htmlFor="login-password" className="text-xs text-muted">
+              비밀번호
+            </label>
             <input
+              id="login-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               type="password"
@@ -73,7 +90,7 @@ function LoginPage() {
           <button
             type="submit"
             disabled={busy}
-            className="w-full py-2.5 bg-primary text-primary-foreground rounded text-xs font-mono uppercase font-bold tracking-widest hover:brightness-110 disabled:opacity-60"
+            className="login-submit w-full py-3 text-white rounded-lg text-sm font-semibold hover:brightness-110 disabled:opacity-60"
           >
             {busy ? "로그인 중…" : "로그인"}
           </button>
@@ -84,34 +101,46 @@ function LoginPage() {
             </Link>
           </div>
         </form>
-
-        <div className="mt-4 bg-surface border border-dashed border-border rounded p-3 text-[10px] font-mono text-muted space-y-1">
-          <div className="uppercase tracking-widest text-foreground/70">
-            데모 계정 (클릭시 자동입력 · 시드 DB 기준)
+        {pc && (
+          <div className="mt-4 text-center text-sm">
+            <button
+              type="button"
+              className="text-primary underline"
+              onClick={() => {
+                setEmail("pi5-demo@example.invalid");
+                setPassword("Pi5-Local-Demo-2026!");
+              }}
+            >
+              데모 계정 사용
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={() => fill("root@demo.io")}
-            className="block hover:text-foreground"
-          >
-            root@demo.io · FACILITY Root
-          </button>
-          <button
-            type="button"
-            onClick={() => fill("member@demo.io")}
-            className="block hover:text-foreground"
-          >
-            member@demo.io · FACILITY Member
-          </button>
-          <button
-            type="button"
-            onClick={() => fill("home@demo.io")}
-            className="block hover:text-foreground"
-          >
-            home@demo.io · HOME
-          </button>
-          <div className="text-muted/70">비밀번호: demo</div>
-        </div>
+        )}
+        {!local && import.meta.env.VITE_USE_MOCK === "1" && (
+          <div className="mt-4 bg-surface border border-dashed border-border rounded p-3 text-[10px] font-mono text-muted space-y-1">
+            <div className="uppercase tracking-widest text-foreground/70">데모 계정 선택</div>
+            <button
+              type="button"
+              onClick={() => fill("root@demo.io")}
+              className="block hover:text-foreground"
+            >
+              시설 관리자
+            </button>
+            <button
+              type="button"
+              onClick={() => fill("member@demo.io")}
+              className="block hover:text-foreground"
+            >
+              시설 직원
+            </button>
+            <button
+              type="button"
+              onClick={() => fill("home@demo.io")}
+              className="block hover:text-foreground"
+            >
+              가정 사용자
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

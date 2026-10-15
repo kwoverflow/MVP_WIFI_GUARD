@@ -8,13 +8,21 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
+import os
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from .settings import settings
 
-engine = create_engine(settings.database_url, pool_pre_ping=True, echo=settings.echo_sql)
+pool_options = {}
+for name, key in (("DB_POOL_SIZE", "pool_size"), ("DB_MAX_OVERFLOW", "max_overflow")):
+    if name in os.environ:
+        value = int(os.environ[name])
+        if not 0 <= value <= 20 or (key == "pool_size" and value == 0):
+            raise ValueError(f"{name} must be a bounded connection count")
+        pool_options[key] = value
+engine = create_engine(settings.database_url, pool_pre_ping=True, echo=settings.echo_sql, **pool_options)
 SessionLocal = sessionmaker(bind=engine, expire_on_commit=False, autoflush=False)
 
 

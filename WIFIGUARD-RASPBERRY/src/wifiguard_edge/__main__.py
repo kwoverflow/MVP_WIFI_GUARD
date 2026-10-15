@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import signal
 import sys
 import threading
@@ -38,6 +39,7 @@ from .transport.base import create_source
 log = logging.getLogger("wifiguard_edge")
 
 EDGE_VERSION = "0.1.0"
+HEALTH_REFRESH_SECONDS = 5.0
 
 
 class EdgeApp:
@@ -50,8 +52,10 @@ class EdgeApp:
         self._stop = threading.Event()
         self._seq = 0
         self._seq_lock = threading.Lock()
+        health_file = os.getenv("HEALTH_FILE", "").strip()
+        self._health_file = Path(health_file) if health_file else None
 
-        self.ring = RingBuffer(max_seconds=30.0)
+        self.ring = RingBuffer(max_seconds=35.0)
         self.gate = SignalGate(
             linger_after_absent_s=config.gating.linger_after_absent_s,
             publish_when_unknown=config.gating.publish_when_unknown,
@@ -98,16 +102,25 @@ class EdgeApp:
 
     def _make_commands(self) -> Any:
         from .mqtt.command import CommandHandler, make_ping_handler
+        from .remote_control import RemoteController
+
+        state_dir = Path(os.getenv("EDGE_CONTROL_STATE_DIR", str(Path.home() / ".local/state/wifiguard-edge"))) if self.use_mqtt else None
+        if state_dir:
+            state_dir = state_dir / str(self.device_id)
+        self.remote = RemoteController(self.ring, self.presence, self.gate, self.source, self._stop,
+                                       state_dir=state_dir, calibration_config=self.config.calibration)
 
         handler = CommandHandler(
             self.publisher,
             device_id=self.device_id,
             tenant_id=self.tenant_id,
             qos=self.config.mqtt.qos_cmd_ack,
+            journal=state_dir / "commands.json" if state_dir else None,
+            require_expiry=True,
         )
         handler.register("ping", make_ping_handler())
-        # calibrate / set_config / set_mode 는 M1 범위 밖 — 등록되지 않은 명령은
-        # CommandHandler 가 error ack 로 답한다(무응답으로 두지 않는다).
+        handler.register("calibrate", self.remote.calibrate)
+        handler.register("set_config", self.remote.set_config)
         self.publisher.on_connect_hook = handler.attach
         return handler
 
@@ -118,6 +131,9 @@ class EdgeApp:
 
         from .mqtt import codec
         from .mqtt.publisher import Outgoing
+
+        if self.gate.inhibited:
+            return
 
         msg = codec.build_signal(
             window,
@@ -248,13 +264,41 @@ class EdgeApp:
         self.publisher.stop()    # 마지막 — 종료 직전 큐를 비울 기회를 준다
         log.info("정지 완료: %s", self.publisher.status())
 
+    def _refresh_health(self) -> None:
+        """Refresh the inherited container heartbeat only while core loops live."""
+        if self._health_file is None:
+            return
+        healthy = (
+            self.source.running
+            and self.presence.is_alive()
+            and self.features.is_alive()
+            and self._telemetry_thread.is_alive()
+        )
+        if healthy:
+            self._health_file.parent.mkdir(parents=True, exist_ok=True)
+            self._health_file.touch()
+        else:
+            self._health_file.unlink(missing_ok=True)
+
+    def _clear_health(self) -> None:
+        if self._health_file is not None:
+            self._health_file.unlink(missing_ok=True)
+
     def run_forever(self) -> None:
         self.start()
+        next_health = 0.0
         try:
             while not self._stop.is_set():
+                now = time.monotonic()
+                if now >= next_health:
+                    self._refresh_health()
+                    next_health = now + HEALTH_REFRESH_SECONDS
                 time.sleep(0.2)
         finally:
-            self.stop()
+            try:
+                self.stop()
+            finally:
+                self._clear_health()
 
 
 def _loop_stats(status: dict[str, Any]) -> dict[str, Any]:

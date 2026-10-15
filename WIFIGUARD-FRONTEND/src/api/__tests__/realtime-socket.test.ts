@@ -104,6 +104,17 @@ function connect() {
 }
 
 describe("연결과 인증", () => {
+  it("Pi5 same-origin 설정은 LAN 주소와 HTTPS에 맞는 소켓 URL을 만든다", () => {
+    expect(__testing.websocketUrl("", "", "http://192.168.1.20:8080")).toBe(
+      "ws://192.168.1.20:8080/ws/live",
+    );
+    expect(__testing.websocketUrl("", undefined, "https://guard.example")).toBe(
+      "wss://guard.example/ws/live",
+    );
+    expect(__testing.websocketUrl("http://test/", "", "http://ignored")).toBe("ws://test/ws/live");
+    expect(__testing.websocketUrl("", "wss://custom/ws", "http://ignored")).toBe("wss://custom/ws");
+  });
+
   it("열리자마자 auth 를 보내고, hello 를 받으면 구독한다", () => {
     const ws = connect();
     expect(ws.frames[0]).toEqual({ type: "auth", token: "test-token" });

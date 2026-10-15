@@ -81,12 +81,18 @@ class LiveCache:
             s.presence_at = ts
             return _copy(s)
 
-    def apply_telemetry(self, device_id: UUID, tenant_id: str, link: dict[str, Any], ts: datetime) -> DeviceState:
+    def apply_telemetry(self, device_id: UUID, tenant_id: str, link: dict[str, Any], ts: datetime, *, input_required: bool = False) -> DeviceState:
         with self._lock:
             s = self._slot(device_id, tenant_id)
             s.link = link
             s.last_seen_at = ts
-            s._seen_mono = time.monotonic()
+            # Original broker mode measures edge heartbeat. Local Pi5 mode also
+            # requires fresh CSI: the API/relay can be alive with the sender off.
+            source_missing = input_required and link.get("connected") is not True
+            s._seen_mono = float("-inf") if source_missing else time.monotonic()
+            if source_missing:
+                s.presence = s.fall = None
+                s.presence_at = s.fall_at = None
             return _copy(s)
 
     def apply_fall(self, device_id: UUID, tenant_id: str, fields: dict[str, Any], ts: datetime) -> DeviceState:
@@ -94,6 +100,15 @@ class LiveCache:
             s = self._slot(device_id, tenant_id)
             s.fall = fields
             s.fall_at = ts
+            return _copy(s)
+
+    def pause_fall(self, device_id: UUID, tenant_id: str, *, clear_presence: bool = False) -> DeviceState:
+        """Clear stale live inference only; persisted fall events are untouched."""
+        with self._lock:
+            s = self._slot(device_id, tenant_id)
+            s.fall = s.fall_at = None
+            if clear_presence:
+                s.presence = s.presence_at = None
             return _copy(s)
 
     # ── 읽기 (REST/WS 스레드) ───────────────────────────────────────

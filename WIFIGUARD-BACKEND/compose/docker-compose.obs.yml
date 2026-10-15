@@ -1,11 +1,13 @@
 # 관측 스택 — 선택 기동 (명세 §3 · F-B18).
 #   docker compose -f compose/docker-compose.dev.yml -f compose/docker-compose.obs.yml up -d
 #
-# 드리프트 알람 체인 (명세 §4 Phase 5-2):
+# 아래 드리프트 알람 체인은 목표 구조이며 아직 연결하지 않았다:
 #   Evidently Drift Score → Prometheus Exporter → scrape
 #     → AlertManager (임계 초과) → Airflow Webhook → model_retrain_dag
 #
-# ⚠ 미검증. 스크랩 대상(Consumer 3 exporter)이 아직 존재하지 않는다.
+# 호스트 스냅샷 UI는 resource_monitor의 기본 loopback 수집으로 동작한다.
+# Prometheus의 호스트 scrape는 Docker bridge 접근 주소와 방화벽을 별도 구성한다.
+# cAdvisor는 privileged/호스트 마운트를 사용하므로 운영 보안 검토 후 선택 기동한다.
 
 name: wifiguard-dev
 
@@ -13,23 +15,36 @@ services:
   prometheus:
     image: prom/prometheus:v3.1.0
     ports:
-      - "9090:9090"
+      - "127.0.0.1:9090:9090"
     volumes:
       - ../infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ../infra/prometheus/rules:/etc/prometheus/rules:ro
       - prometheus-data:/prometheus
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.2
+    ports:
+      - "127.0.0.1:8081:8080"
+    privileged: true
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
 
   alertmanager:
     image: prom/alertmanager:v0.28.0
     ports:
-      - "9093:9093"
+      - "127.0.0.1:9093:9093"
     volumes:
       - ../infra/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
 
   grafana:
     image: grafana/grafana:11.5.0
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     environment:
       GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_PASSWORD:?set in .env}"
     volumes:
@@ -40,7 +55,7 @@ services:
   loki:
     image: grafana/loki:3.3.2
     ports:
-      - "3100:3100"
+      - "127.0.0.1:3100:3100"
     volumes:
       - ../infra/loki/loki.yml:/etc/loki/local-config.yaml:ro
       - loki-data:/loki

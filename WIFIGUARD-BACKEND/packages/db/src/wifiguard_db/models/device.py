@@ -8,7 +8,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from ..base import Base, ScopeMixin, TimestampMixin, scope_xor, uuid_pk
 
-CONNECTIONS = ("MQTT", "SERIAL")
+CONNECTIONS = ("MQTT", "SERIAL", "SPI")
 # 현행 코드의 61초 4단계 캘리브레이션 스테이지 (mock-store.ts CalibrationStage / backend CalibrationPhase 대문자)
 CALIBRATION_STAGES = ("IDLE", "LEAVING", "WAITING_ACK", "WAITING_AGC", "MEASURING", "DONE", "ERROR")
 
@@ -47,10 +47,11 @@ class Device(TimestampMixin, ScopeMixin, Base):
     )
     presence_mv_threshold: Mapped[float | None] = mapped_column(Float, nullable=True)
     wander_baseline: Mapped[float | None] = mapped_column(Float, nullable=True)
+    calibration_run_id: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     __table_args__ = (
         scope_xor(),
-        CheckConstraint("connection IN ('MQTT','SERIAL')", name="connection"),
+        CheckConstraint("connection IN ('MQTT','SERIAL','SPI')", name="connection"),
         CheckConstraint(
             "calibration_stage IN ('IDLE','LEAVING','WAITING_ACK','WAITING_AGC','MEASURING','DONE','ERROR')",
             name="calibration_stage",
@@ -59,7 +60,7 @@ class Device(TimestampMixin, ScopeMixin, Base):
             "calibration_progress >= 0 AND calibration_progress <= 1", name="calibration_progress_range"
         ),
         CheckConstraint(
-            "(connection = 'MQTT' AND mqtt_topic IS NOT NULL) OR (connection = 'SERIAL' AND serial_port IS NOT NULL)",
+            "(connection = 'MQTT' AND mqtt_topic IS NOT NULL) OR (connection = 'SERIAL' AND serial_port IS NOT NULL) OR connection = 'SPI'",
             name="connection_target",
         ),
         Index(

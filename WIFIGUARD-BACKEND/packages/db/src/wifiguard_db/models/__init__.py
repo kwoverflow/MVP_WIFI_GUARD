@@ -10,9 +10,12 @@ from .refresh_token import RefreshToken
 from .resident import Resident, ResidentDevice
 from .tenant_config import TenantConfig
 from .user import User
+from .mobile_push import MobileInstallation, MobilePushDelivery
+from .edge_command import EdgeCommand
 
 __all__ = [
     "Device",
+    "EdgeCommand",
     "EventLog",
     "Facility",
     "FallEvent",
@@ -22,5 +25,7 @@ __all__ = [
     "ResidentDevice",
     "TenantConfig",
     "User",
+    "MobileInstallation",
+    "MobilePushDelivery",
     "presence_samples",
 ]

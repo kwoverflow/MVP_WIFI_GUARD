@@ -73,6 +73,7 @@ class FallBlock(WireModel):
     postprocess: PostProcess
     fall_count: int = 0
     last_fall_time: float | None = None
+    fall_event_id: UUID | None = Field(default=None, description="Committed fall_events row ID for acknowledgement; None when not persisted")
     updated_at: datetime
 
 
