@@ -20,6 +20,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as NotificationsRouteImport } from './routes/notifications'
 import { Route as ResidentsRouteImport } from './routes/residents'
 import { Route as SignupRouteImport } from './routes/signup'
+import { Route as SystemRouteImport } from './routes/system'
 import { Route as TrainRouteImport } from './routes/train'
 
 const IndexRoute = IndexRouteImport.update({
@@ -77,6 +78,11 @@ const SignupRoute = SignupRouteImport.update({
   path: '/signup',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SystemRoute = SystemRouteImport.update({
+  id: '/system',
+  path: '/system',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const TrainRoute = TrainRouteImport.update({
   id: '/train',
   path: '/train',
@@ -95,6 +101,7 @@ export interface FileRoutesByFullPath {
   '/notifications': typeof NotificationsRoute
   '/residents': typeof ResidentsRoute
   '/signup': typeof SignupRoute
+  '/system': typeof SystemRoute
   '/train': typeof TrainRoute
 }
 export interface FileRoutesByTo {
@@ -109,6 +116,7 @@ export interface FileRoutesByTo {
   '/notifications': typeof NotificationsRoute
   '/residents': typeof ResidentsRoute
   '/signup': typeof SignupRoute
+  '/system': typeof SystemRoute
   '/train': typeof TrainRoute
 }
 export interface FileRoutesById {
@@ -124,6 +132,7 @@ export interface FileRoutesById {
   '/notifications': typeof NotificationsRoute
   '/residents': typeof ResidentsRoute
   '/signup': typeof SignupRoute
+  '/system': typeof SystemRoute
   '/train': typeof TrainRoute
 }
 export interface FileRouteTypes {
@@ -140,6 +149,7 @@ export interface FileRouteTypes {
     | '/notifications'
     | '/residents'
     | '/signup'
+    | '/system'
     | '/train'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -154,6 +164,7 @@ export interface FileRouteTypes {
     | '/notifications'
     | '/residents'
     | '/signup'
+    | '/system'
     | '/train'
   id:
     | '__root__'
@@ -168,6 +179,7 @@ export interface FileRouteTypes {
     | '/notifications'
     | '/residents'
     | '/signup'
+    | '/system'
     | '/train'
   fileRoutesById: FileRoutesById
 }
@@ -183,6 +195,7 @@ export interface RootRouteChildren {
   NotificationsRoute: typeof NotificationsRoute
   ResidentsRoute: typeof ResidentsRoute
   SignupRoute: typeof SignupRoute
+  SystemRoute: typeof SystemRoute
   TrainRoute: typeof TrainRoute
 }
 
@@ -265,6 +278,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SignupRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/system': {
+      id: '/system'
+      path: '/system'
+      fullPath: '/system'
+      preLoaderRoute: typeof SystemRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/train': {
       id: '/train'
       path: '/train'
@@ -287,6 +307,7 @@ const rootRouteChildren: RootRouteChildren = {
   NotificationsRoute: NotificationsRoute,
   ResidentsRoute: ResidentsRoute,
   SignupRoute: SignupRoute,
+  SystemRoute: SystemRoute,
   TrainRoute: TrainRoute,
 }
 export const routeTree = rootRouteImport

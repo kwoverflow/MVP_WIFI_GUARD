@@ -12,7 +12,7 @@ dependencies = [
   "kafka-python>=2.1",
   "wifiguard-db",
   "wifiguard-contracts",
-  "wifiguard-notify",
+  "wifiguard-notify[mobile]",
 ]
 
 [tool.uv.sources]

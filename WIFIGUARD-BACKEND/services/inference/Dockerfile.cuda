@@ -18,8 +18,8 @@ RUN python -m pip install --no-cache-dir cupy-cuda12x && \
     '/app/raspberry[cwt]' \
     /app/backend/services/inference
 
-RUN mkdir -p /tmp/wifiguard-numba-cache /tmp/wifiguard-cupy-cache && \
-    chown 65532:65532 /tmp/wifiguard-numba-cache /tmp/wifiguard-cupy-cache
+RUN mkdir -p /tmp/wifiguard-numba-cache /tmp/wifiguard-cupy-cache /app/runtime && \
+    chown 65532:65532 /tmp/wifiguard-numba-cache /tmp/wifiguard-cupy-cache /app/runtime
 
 USER 65532:65532
 CMD ["python", "-m", "wifiguard_inference"]

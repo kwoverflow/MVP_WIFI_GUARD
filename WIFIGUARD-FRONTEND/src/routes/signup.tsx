@@ -4,9 +4,10 @@ import { toast } from "sonner";
 import { useAuth } from "@/api/auth";
 import { ApiError } from "@/api/client";
 import type { Service } from "@/lib/domain";
+import { BrandLogo } from "@/components/BrandLogo";
 
 export const Route = createFileRoute("/signup")({
-  head: () => ({ meta: [{ title: "회원가입 · CSI-Guard" }] }),
+  head: () => ({ meta: [{ title: "회원가입 · WIFI-GUARD" }] }),
   component: SignupPage,
 });
 
@@ -37,7 +38,7 @@ function SignupPage() {
         facilityName: service === "FACILITY" && facilityMode === "ROOT" ? facilityName : null,
         inviteCode: service === "FACILITY" && facilityMode === "MEMBER" ? inviteCode : null,
       });
-      toast.success("가입 완료 · 사이드바의 재실 대상 관리에서 등록을 시작하세요");
+      toast.success("가입이 완료되었습니다");
       navigate({ to: "/" });
     } catch (err) {
       if (err instanceof ApiError) {
@@ -52,13 +53,14 @@ function SignupPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-6">
-      <div className="w-full max-w-md">
+    <div className="user-login-page min-h-screen flex items-center justify-center p-6">
+      <div className="user-login-card w-full max-w-md">
         <div className="mb-8 text-center">
-          <div className="font-mono font-bold text-2xl tracking-tighter">CSI-GUARD</div>
-          <p className="text-xs font-mono text-muted uppercase tracking-widest mt-1">
-            Create Account
-          </p>
+          <span className="login-brand-icon">
+            <BrandLogo />
+          </span>
+          <div className="font-mono font-bold text-2xl tracking-tighter">WIFI-GUARD</div>
+          <p className="text-xs font-mono text-muted uppercase tracking-widest mt-1">회원가입</p>
         </div>
         <form
           onSubmit={submit}
@@ -99,13 +101,13 @@ function SignupPage() {
               <ServiceCard
                 active={service === "HOME"}
                 onClick={() => setService("HOME")}
-                title="HOME"
+                title="가정"
                 desc="가정 · 1인 거주"
               />
               <ServiceCard
                 active={service === "FACILITY"}
                 onClick={() => setService("FACILITY")}
-                title="FACILITY"
+                title="시설"
                 desc="요양원 · 다중 거주자"
               />
             </div>
@@ -119,14 +121,14 @@ function SignupPage() {
                   onClick={() => setFacilityMode("ROOT")}
                   className={`py-2 rounded text-xs font-mono uppercase border ${facilityMode === "ROOT" ? "bg-primary text-primary-foreground border-primary" : "border-border text-muted"}`}
                 >
-                  시설 신규등록 (Root)
+                  시설 등록
                 </button>
                 <button
                   type="button"
                   onClick={() => setFacilityMode("MEMBER")}
                   className={`py-2 rounded text-xs font-mono uppercase border ${facilityMode === "MEMBER" ? "bg-primary text-primary-foreground border-primary" : "border-border text-muted"}`}
                 >
-                  기존 시설 참여 (Member)
+                  시설 참여
                 </button>
               </div>
               {facilityMode === "ROOT" ? (
@@ -144,12 +146,12 @@ function SignupPage() {
                   <input
                     value={inviteCode}
                     onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
-                    placeholder="예: GN-8421"
+                    placeholder="초대 코드 입력"
                     className={inputCls}
                     required
                   />
                   <p className="text-[10px] font-mono text-muted mt-1">
-                    시설 Root 계정으로부터 코드를 받으세요. 데모: GN-8421
+                    시설 관리자에게 받은 초대 코드를 입력하세요.
                   </p>
                 </Field>
               )}

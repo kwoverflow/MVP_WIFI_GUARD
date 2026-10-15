@@ -113,6 +113,8 @@ def test_recipient(
 
 
 def _validate_channels(body: RecipientIn) -> None:
+    from .pc_simulation import validate_pc_notification_target
+    validate_pc_notification_target(body)
     if body.email_enabled and not (body.email or "").strip():
         raise ApiError(400, "EMAIL_REQUIRED", "이메일 알림을 사용하려면 이메일 주소가 필요합니다.")
     if body.push and not (body.ntfy_topic or "").strip():
@@ -120,6 +122,8 @@ def _validate_channels(body: RecipientIn) -> None:
 
 
 def _validate_recipient(rec: Recipient) -> None:
+    from .pc_simulation import validate_pc_notification_target
+    validate_pc_notification_target(rec)
     if rec.email_enabled and not (rec.email or "").strip():
         raise ApiError(400, "EMAIL_REQUIRED", "이메일 알림을 사용하려면 이메일 주소가 필요합니다.")
     if rec.push and not (rec.ntfy_topic or "").strip():

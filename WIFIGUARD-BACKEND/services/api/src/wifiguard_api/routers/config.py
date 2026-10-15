@@ -41,7 +41,7 @@ def put_config(body: TenantConfigIn, scope: Scope = Depends(get_scope), db: Sess
     for key, value in body.model_dump().items():
         setattr(cfg, key, value)
     cfg.updated_by = scope.user_id
-    add_log(db, scope, "INFO", "탐지 설정 적용됨")
+    add_log(db, scope, "INFO", "탐지 설정 저장됨 · Pi5 실행 적용은 런타임 확인 필요")
     db.commit()
     db.refresh(cfg)
     return cfg

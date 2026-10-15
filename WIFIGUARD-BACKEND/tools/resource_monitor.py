@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import threading
@@ -57,11 +58,13 @@ def gpu_samples() -> list[dict[str, Any]]:
 
 
 class Monitor:
-    def __init__(self, path: Path, interval: float, history_size: int, output: Path | None):
+    def __init__(self, path: Path, interval: float, history_size: int, output: Path | None,
+                 snapshot: Path | None = None):
         self.path = path
         self.interval = interval
         self.history: deque[dict[str, Any]] = deque(maxlen=history_size)
         self.output = output
+        self.snapshot = snapshot
         self.lock = threading.Lock()
         self.stop_event = threading.Event()
         self.thread = threading.Thread(target=self._run, daemon=True)
@@ -70,6 +73,8 @@ class Monitor:
     def start(self) -> None:
         if self.output:
             self.output.parent.mkdir(parents=True, exist_ok=True)
+        if self.snapshot:
+            self.snapshot.parent.mkdir(parents=True, exist_ok=True)
         self.thread.start()
 
     def _sample(self) -> dict[str, Any]:
@@ -99,6 +104,11 @@ class Monitor:
             if self.output:
                 with self.output.open("a", encoding="utf-8") as handle:
                     handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+            if self.snapshot:
+                # One bounded latest snapshot, not an unbounded history file.
+                temporary = self.snapshot.with_name(self.snapshot.name + f'.{os.getpid()}.tmp')
+                temporary.write_text(json.dumps(row, allow_nan=False), encoding='utf-8')
+                os.replace(temporary, self.snapshot)
             self.stop_event.wait(self.interval)
 
     def latest(self) -> dict[str, Any]:
@@ -182,8 +192,11 @@ def main() -> None:
     parser.add_argument("--history-size", type=int, default=900)
     parser.add_argument("--path", type=Path, default=Path.cwd())
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--snapshot", type=Path, help="atomic latest-only JSON for authenticated UI; never public HTTP")
     args = parser.parse_args()
-    monitor = Monitor(args.path.resolve(), args.interval, args.history_size, args.output)
+    if args.interval <= 0 or args.history_size < 1:
+        parser.error('interval and history-size must be positive')
+    monitor = Monitor(args.path.resolve(), args.interval, args.history_size, args.output, args.snapshot)
     monitor.start()
     server = ThreadingHTTPServer((args.host, args.port), handler_factory(monitor))
     print(f"resource dashboard: http://{args.host}:{args.port}", flush=True)

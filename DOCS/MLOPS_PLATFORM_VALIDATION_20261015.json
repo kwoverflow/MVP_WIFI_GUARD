@@ -1,0 +1,49 @@
+{
+  "kind": "mlops-platform-software-validation",
+  "date": "2026-10-15",
+  "destination": "kwoverflow/MVP_WIFI_GUARD:main",
+  "branch": "codex/mlops-ui-notifications-20261015",
+  "base_catchup": "Personal main was 0a3358a; includes the existing 5ce847f Pi3/cloud baseline plus this upgrade",
+  "regression": {
+    "backend": {"passed": 189, "failed": 0, "skipped": 0},
+    "inference": {"passed": 13, "failed": 0, "skipped": 0},
+    "raspberry": {"passed": 118, "failed": 0, "skipped": 0},
+    "frontend": {"passed": 95, "failed": 0, "skipped": 0},
+    "unique_total": 415,
+    "typescript": "PASS",
+    "cloud_production_build": "PASS",
+    "openapi_snapshot": "PASS"
+  },
+  "integration": {
+    "isolation": "Unique disposable loopback Docker project; no existing stack or sensor used",
+    "actual_checkpoint_synthetic_features_mqtt_kafka_results": "PASS",
+    "separate_positive_fixture_fall_db_dedup_ack": "PASS",
+    "smtp_mailpit_capture": "PASS",
+    "presence_rest_native_timescale_row": "PASS",
+    "remote_ping_ack": "PASS",
+    "remote_settings_ack_and_effective_values": "PASS",
+    "remote_full_30s_leave_30s_measure_calibration_and_db": "PASS",
+    "mlflow_registry_health": "PASS",
+    "actual_optimizer_train_and_finetune": {"passed": true, "steps_each": 1, "synthetic_feature_examples": 2, "encoder_frozen": true, "registered_model_versions": [1, 2], "promoted_to_production": false},
+    "cloud_gateway_blocks_pi5_control": "PASS",
+    "browser_pc_and_390px_mobile": "PASS",
+    "acknowledged_fall_not_reopened": "PASS"
+  },
+  "metrics_scope": {
+    "host": "Whole host, includes unrelated applications; not exclusive pipeline usage",
+    "worker": "Last 128 group per-window batch averages; not capture-to-alert delay",
+    "stale_or_missing": "unknown, not zero"
+  },
+  "not_verified": [
+    "Physical Pi3/Pi5/ESP32 and actual remote device actuation",
+    "Actual fall/non-fall model accuracy or deployment performance guarantee",
+    "External operating email/FCM arrival in this change",
+    "Production TLS, broker device credentials/ACL, AWS deployment",
+    "Long-duration load, thermals, storage retention",
+    "Automatic Airflow/Evidently retraining and production promotion"
+  ],
+  "hardware_exercised": false,
+  "external_notifications_sent": false,
+  "team_pr_2_modified": false,
+  "credentials_or_weights_published": false
+}

@@ -19,7 +19,7 @@ RUN python -m pip install --no-cache-dir \
     '/app/raspberry[cwt]' \
     /app/backend/services/inference
 
-RUN mkdir -p /tmp/wifiguard-numba-cache && chown 65532:65532 /tmp/wifiguard-numba-cache
+RUN mkdir -p /tmp/wifiguard-numba-cache /app/runtime && chown 65532:65532 /tmp/wifiguard-numba-cache /app/runtime
 
 USER 65532:65532
 CMD ["python", "-m", "wifiguard_inference"]

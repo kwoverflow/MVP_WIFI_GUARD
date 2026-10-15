@@ -109,7 +109,7 @@ export interface Device {
   // RSSI/Noise Floor/AGC와 달리 이 두 값만 캘리브레이션 절차의 결과물이다.
   presence_mv_threshold: number;
   wander_baseline: number;
-  connection: "MQTT" | "SERIAL"; // 통신 방식
+  connection: "MQTT" | "SERIAL" | "SPI"; // 통신 방식
   serialPort?: string; // SERIAL 연결일 때
   facilityId?: string; // FACILITY 소속
   ownerUserId?: string; // HOME 소유자
@@ -220,7 +220,7 @@ function mkDevice(
   mac: string,
   facilityId?: string,
   ownerUserId?: string,
-  connection: "MQTT" | "SERIAL" = "MQTT",
+  connection: "MQTT" | "SERIAL" | "SPI" = "MQTT",
   serialPort?: string,
 ): Device {
   return {

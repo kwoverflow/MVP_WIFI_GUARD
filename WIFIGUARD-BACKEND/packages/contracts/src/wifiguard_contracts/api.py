@@ -17,7 +17,7 @@ from pydantic.alias_generators import to_camel
 Service = Literal["HOME", "FACILITY"]
 Role = Literal["ROOT", "MEMBER", "USER"]
 FacilityMode = Literal["ROOT", "MEMBER"]
-Connection = Literal["MQTT", "SERIAL"]
+Connection = Literal["MQTT", "SERIAL", "SPI"]
 CalibrationStage = Literal["IDLE", "LEAVING", "WAITING_ACK", "WAITING_AGC", "MEASURING", "DONE", "ERROR"]
 FallResponse = Literal["PENDING", "ACKNOWLEDGED", "DISPATCHED", "FALSE_ALARM"]
 FallSource = Literal["EDGE", "SIMULATED", "SEED"]

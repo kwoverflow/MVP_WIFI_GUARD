@@ -32,6 +32,15 @@ class FallEventSink:
     def event_key(result: InferenceResult) -> str:
         return f"{result.device_id}:{result.ts.isoformat()}:{result.seq}"
 
+    def event_id(self, result: InferenceResult):
+        """Resolve the committed row ID for UI acknowledgement, never a live ID."""
+        from wifiguard_db.models import FallEvent
+        with self._sessions() as db:
+            return db.execute(select(FallEvent.id).where(
+                FallEvent.source_event_key == self.event_key(result),
+                FallEvent.device_id == result.device_id,
+            )).scalar_one_or_none()
+
     def record(self, result: InferenceResult) -> bool:
         """Write once. Missing devices or tenant mismatches are rejected, not fabricated."""
         try:
@@ -75,7 +84,7 @@ class FallEventSink:
                     occurred_at=result.ts,
                     confidence=result.proba_fall,
                     duration_s=0.0,
-                    source="EDGE",
+                    source="SIMULATED" if (result.model_version or "").startswith("pc-injected-alert-routing-test-") else "EDGE",
                     response="PENDING",
                     source_event_key=key,
                     model_version=result.model_version,
@@ -84,11 +93,16 @@ class FallEventSink:
                 )
                 db.add(fall)
                 db.flush()
+                # Mobile delivery is durable and commits atomically with the fall.
+                # Existing email/ntfy dispatch after commit remains unchanged.
+                from wifiguard_notify.mobile import enqueue_fall
+                enqueue_fall(db, fall)
                 db.add(
                     EventLog(
                         ts=result.inferred_at,
                         level="FALL",
                         msg=(
+                            ("[PC 시험 이벤트 · 모델 판정 아님] " if fall.source == "SIMULATED" else "") +
                             f"{fall.resident_name} ({fall.room}) 낙상 감지 · "
                             f"신뢰도 {fall.confidence:.3f}"
                         ),

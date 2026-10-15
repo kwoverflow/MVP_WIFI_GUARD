@@ -106,4 +106,5 @@ def test_presence_loop_does_convert():
     """반대로 PresenceLoop 에는 변환이 남아 있어야 한다 (MV·wander 두 경로)."""
     from wifiguard_edge.presence_loop import PresenceLoop
 
-    assert _count_1e6_multiplications(PresenceLoop._tick) == 2
+    assert (_count_1e6_multiplications(PresenceLoop._tick)
+            + _count_1e6_multiplications(PresenceLoop._compute_wander_current)) == 2

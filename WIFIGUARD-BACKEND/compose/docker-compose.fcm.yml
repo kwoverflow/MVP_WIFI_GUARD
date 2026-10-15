@@ -1,0 +1,15 @@
+# Opt-in only. The private server key lives OUTSIDE the checkout and images.
+services:
+  api:
+    environment:
+      MOBILE_PUSH_ENABLED: "1"
+      FCM_PROJECT_ID: "${FCM_PROJECT_ID:?set the matching Android Firebase project}"
+      FCM_SERVICE_ACCOUNT_FILE: /run/secrets/wifiguard-fcm.json
+      MOBILE_PC_TEST_PUSH_ENABLED: "0"
+    volumes:
+      - type: bind
+        source: "${FCM_SERVICE_ACCOUNT_HOST:?set an absolute protected server-only JSON path}"
+        target: /run/secrets/wifiguard-fcm.json
+        read_only: true
+        bind:
+          create_host_path: false

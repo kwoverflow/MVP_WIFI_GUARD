@@ -1,0 +1,17 @@
+FROM node:24-bookworm-slim AS builder
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY . .
+RUN node scripts/build-cloud.mjs
+
+FROM node:24-bookworm-slim
+ENV NODE_ENV=production UI_HOST=0.0.0.0 UI_PORT=4173
+WORKDIR /app
+COPY --from=builder /app/.output ./.output
+COPY --from=builder /app/dist/server ./dist/server
+COPY --from=builder /app/scripts/serve-cloud.mjs ./scripts/serve-cloud.mjs
+COPY --from=builder /app/package.json ./package.json
+USER node
+EXPOSE 4173
+CMD ["node", "--max-old-space-size=192", "scripts/serve-cloud.mjs"]

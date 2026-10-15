@@ -9,9 +9,10 @@ from alembic import command
 from sqlalchemy import inspect, text
 from sqlalchemy.exc import IntegrityError
 
-EXPECTED_TABLES = {
+EXPECTED_TABLES = {"edge_commands",
     "facilities", "users", "refresh_tokens", "tenant_configs", "devices", "residents",
     "resident_devices", "recipients", "fall_events", "event_logs", "presence_samples",
+    "mobile_installations", "mobile_push_deliveries",
 }
 
 

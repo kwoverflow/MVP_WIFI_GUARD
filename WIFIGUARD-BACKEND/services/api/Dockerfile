@@ -12,9 +12,11 @@ COPY services/api /app/services/api
 RUN python -m pip install --no-cache-dir \
     /app/packages/contracts \
     /app/packages/db \
-    /app/services/notification \
+    '/app/services/notification[mobile]' \
     /app/services/ingest \
     /app/services/api
+
+RUN mkdir -p /app/runtime-inference && chown 65532:65532 /app/runtime-inference
 
 EXPOSE 8000
 CMD ["uvicorn", "wifiguard_api.app:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

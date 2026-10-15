@@ -52,6 +52,17 @@ class SignalGate:
         self._forced_until: float | None = None
         self._opened = 0
         self._gated = 0
+        self._inhibited = False
+
+    def inhibit(self, value: bool) -> None:
+        """Calibration suppresses model signals, not CSI capture/telemetry."""
+        with self._lock:
+            self._inhibited = value
+
+    @property
+    def inhibited(self) -> bool:
+        with self._lock:
+            return self._inhibited
 
     # ── 입력 ────────────────────────────────────────────────────────
     def note_presence(self, state: str | None) -> None:
@@ -71,6 +82,9 @@ class SignalGate:
         """이 윈도우를 올릴 것인가. 호출할 때마다 카운터가 증가한다."""
         now = self._clock()
         with self._lock:
+            if self._inhibited:
+                self._gated += 1
+                return GateDecision(False, None, "빈방 보정 중 · 추론 신호 일시 중지")
             if self._forced_until is not None and now < self._forced_until:
                 self._opened += 1
                 return GateDecision(True, "calibration", "강제 개방 구간")
@@ -102,6 +116,8 @@ class SignalGate:
         """마지막 판정과 무관하게 지금 열려 있는지 (텔레메트리 `gate_open`)."""
         now = self._clock()
         with self._lock:
+            if self._inhibited:
+                return False
             if self._forced_until is not None and now < self._forced_until:
                 return True
             last = self._last_present_at

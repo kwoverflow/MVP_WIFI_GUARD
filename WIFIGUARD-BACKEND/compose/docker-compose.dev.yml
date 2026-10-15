@@ -16,8 +16,8 @@ services:
   mosquitto:
     image: eclipse-mosquitto:2.0
     ports:
-      - "${MQTT_HOST_PORT:-1883}:1883"   # 로컬 개발은 평문. 운영 mTLS 8883은 IoT Core가 담당
-      - "9001:9001"
+      - "127.0.0.1:${MQTT_HOST_PORT:-1883}:1883" # anonymous fixture broker: never expose publicly
+      - "127.0.0.1:9001:9001"
     volumes:
       - ../infra/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
       - ../infra/mosquitto/acl:/mosquitto/config/acl:ro
@@ -32,7 +32,7 @@ services:
   kafka:
     image: apache/kafka:3.9.1
     ports:
-      - "9092:9092"
+      - "127.0.0.1:9092:9092"
     environment:
       # KRaft 모드 — zookeeper 불필요
       KAFKA_NODE_ID: "0"
@@ -74,7 +74,7 @@ services:
   timescaledb:
     image: timescale/timescaledb:2.17.2-pg16
     ports:
-      - "${TSDB_HOST_PORT:-5433}:5432"
+      - "127.0.0.1:${TSDB_HOST_PORT:-5433}:5432"
     environment:
       POSTGRES_DB: "${TSDB_NAME:-wifiguard_ts}"
       POSTGRES_USER: "${TSDB_USER:-wifiguard}"
@@ -91,7 +91,7 @@ services:
   postgres:
     image: postgres:16
     ports:
-      - "${PG_HOST_PORT:-5432}:5432"
+      - "127.0.0.1:${PG_HOST_PORT:-5432}:5432"
     environment:
       POSTGRES_DB: "${PG_NAME:-wifiguard}"
       POSTGRES_USER: "${PG_USER:-wifiguard}"
@@ -109,7 +109,7 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis-data:/data
 
@@ -119,8 +119,8 @@ services:
     image: quay.io/minio/minio:latest
     command: server /data --console-address ":9001"
     ports:
-      - "9000:9000"
-      - "9002:9001"
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9002:9001"
     environment:
       MINIO_ROOT_USER: "${MINIO_USER:-minioadmin}"
       MINIO_ROOT_PASSWORD: "${MINIO_PASSWORD:?set in .env}"
@@ -136,7 +136,7 @@ services:
   mailpit:
     image: axllent/mailpit:v1.27
     ports:
-      - "${MAILPIT_UI_PORT:-8025}:8025"
+      - "127.0.0.1:${MAILPIT_UI_PORT:-8025}:8025"
     healthcheck:
       test: ["CMD", "/mailpit", "readyz"]
       interval: 5s
@@ -154,7 +154,7 @@ services:
       --backend-store-uri postgresql://${PG_USER:-wifiguard}:${PG_PASSWORD}@postgres:5432/mlflow
       --artifacts-destination /mlartifacts
     ports:
-      - "5000:5000"
+      - "127.0.0.1:5000:5000"
     volumes:
       - mlflow-artifacts:/mlartifacts
     depends_on:
@@ -171,13 +171,15 @@ services:
       context: ..
       dockerfile: services/api/Dockerfile
     ports:
-      - "${API_HOST_PORT:-8000}:8000"
+      - "127.0.0.1:${API_HOST_PORT:-8000}:8000"
     environment:
       DATABASE_URL: "postgresql+psycopg://${PG_USER:-wifiguard}:${PG_PASSWORD}@postgres:5432/${PG_NAME:-wifiguard}"
       TSDB_DSN: "postgresql://${TSDB_USER:-wifiguard}:${TSDB_PASSWORD}@timescaledb:5432/${TSDB_NAME:-wifiguard_ts}"
-      MQTT_HOST: mosquitto
-      MQTT_PORT: "1883"
-      MQTT_TLS: "0"
+      MQTT_HOST: "${MQTT_HOST:-mosquitto}"
+      MQTT_PORT: "${MQTT_PORT:-1883}"
+      MQTT_TLS: "${MQTT_TLS:-0}"
+      MQTT_USERNAME: "${MQTT_USERNAME:-}"
+      MQTT_PASSWORD: "${MQTT_PASSWORD:-}"
       KAFKA_BOOTSTRAP: "kafka:29092"
       JWT_SECRET: "${JWT_SECRET:?set in .env}"
       ALLOW_FALL_SIMULATE: "${ALLOW_FALL_SIMULATE:-0}"
@@ -189,8 +191,15 @@ services:
       SMTP_STARTTLS: "${SMTP_STARTTLS:-0}"
       MLFLOW_TRACKING_URI: "${MLFLOW_TRACKING_URI:-http://mlflow:5000}"
       TRAINING_ARTIFACTS_DIR: /app/artifacts/validation
+      RESOURCE_SNAPSHOT_FILE: /app/runtime-host/host.json
+      INFERENCE_STATUS_FILE: /app/runtime-inference/status.json
+      PC_SIMULATION_MODE: "0"
+      PI5_CONTROL_ENABLED: "0"
+      MOBILE_PUSH_ENABLED: "0" # opt-in read-only secret mount: docker-compose.fcm.yml
     volumes:
       - ../artifacts/validation:/app/artifacts/validation:ro
+      - ../artifacts/runtime-resources:/app/runtime-host:ro
+      - inference-runtime:/app/runtime-inference:ro
     command: >
       sh -ec 'alembic -c /app/packages/db/alembic.ini upgrade head &&
       uvicorn wifiguard_api.app:app --host 0.0.0.0 --port 8000 --workers 1'
@@ -221,8 +230,11 @@ services:
       MODEL_POSTPROCESS: "${MODEL_POSTPROCESS:-b}"
       INFERENCE_BATCH_SIZE: "${INFERENCE_BATCH_SIZE:-4}"
       INFERENCE_BATCH_WAIT_MS: "${INFERENCE_BATCH_WAIT_MS:-300}"
+      FEATURE_BACKEND: "${FEATURE_BACKEND:-reference}"
+      INFERENCE_STATUS_FILE: /app/runtime/status.json
     volumes:
       - "${MODEL_CHECKPOINT_HOST:-../weights/temporal_segmentation_fixed_delay.pt}:/models/model.pt:ro"
+      - inference-runtime:/app/runtime
     depends_on:
       kafka-init:
         condition: service_completed_successfully
@@ -243,8 +255,11 @@ services:
       INFERENCE_BATCH_SIZE: "${INFERENCE_BATCH_SIZE:-4}"
       INFERENCE_BATCH_WAIT_MS: "${INFERENCE_BATCH_WAIT_MS:-300}"
       SSQ_GPU: "1"
+      FEATURE_BACKEND: reference
+      INFERENCE_STATUS_FILE: /app/runtime/status.json
     volumes:
       - "${MODEL_CHECKPOINT_HOST:-../weights/temporal_segmentation_fixed_delay.pt}:/models/model.pt:ro"
+      - inference-runtime:/app/runtime
     deploy:
       resources:
         reservations:
@@ -265,6 +280,7 @@ volumes:
   redis-data:
   minio-data:
   mlflow-artifacts:
+  inference-runtime:
 
 # 관측 스택(prometheus/grafana/alertmanager/loki)은 compose/docker-compose.obs.yml 로 분리.
 # Airflow는 재학습 루프(Phase 6)에 들어갈 때 추가한다 — 지금 띄워도 돌릴 DAG가 없다.

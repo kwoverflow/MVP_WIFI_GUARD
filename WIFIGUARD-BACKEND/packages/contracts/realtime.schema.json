@@ -142,6 +142,20 @@
           "title": "Fall Count",
           "type": "integer"
         },
+        "fall_event_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Committed fall_events row ID for acknowledgement; None when not persisted",
+          "title": "Fall Event Id"
+        },
         "last_fall_time": {
           "anyOf": [
             {

@@ -55,7 +55,7 @@ class EdgeApp:
         health_file = os.getenv("HEALTH_FILE", "").strip()
         self._health_file = Path(health_file) if health_file else None
 
-        self.ring = RingBuffer(max_seconds=30.0)
+        self.ring = RingBuffer(max_seconds=35.0)
         self.gate = SignalGate(
             linger_after_absent_s=config.gating.linger_after_absent_s,
             publish_when_unknown=config.gating.publish_when_unknown,
@@ -102,16 +102,25 @@ class EdgeApp:
 
     def _make_commands(self) -> Any:
         from .mqtt.command import CommandHandler, make_ping_handler
+        from .remote_control import RemoteController
+
+        state_dir = Path(os.getenv("EDGE_CONTROL_STATE_DIR", str(Path.home() / ".local/state/wifiguard-edge"))) if self.use_mqtt else None
+        if state_dir:
+            state_dir = state_dir / str(self.device_id)
+        self.remote = RemoteController(self.ring, self.presence, self.gate, self.source, self._stop,
+                                       state_dir=state_dir, calibration_config=self.config.calibration)
 
         handler = CommandHandler(
             self.publisher,
             device_id=self.device_id,
             tenant_id=self.tenant_id,
             qos=self.config.mqtt.qos_cmd_ack,
+            journal=state_dir / "commands.json" if state_dir else None,
+            require_expiry=True,
         )
         handler.register("ping", make_ping_handler())
-        # calibrate / set_config / set_mode 는 M1 범위 밖 — 등록되지 않은 명령은
-        # CommandHandler 가 error ack 로 답한다(무응답으로 두지 않는다).
+        handler.register("calibrate", self.remote.calibrate)
+        handler.register("set_config", self.remote.set_config)
         self.publisher.on_connect_hook = handler.attach
         return handler
 
@@ -122,6 +131,9 @@ class EdgeApp:
 
         from .mqtt import codec
         from .mqtt.publisher import Outgoing
+
+        if self.gate.inhibited:
+            return
 
         msg = codec.build_signal(
             window,

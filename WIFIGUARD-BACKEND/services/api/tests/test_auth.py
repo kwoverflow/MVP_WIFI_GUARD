@@ -165,4 +165,4 @@ def test_health_and_ports(client):
     h = client.get("/health")
     assert h.status_code == 200, h.text
     assert h.json()["checks"]["database"]["ok"] is True
-    assert h.json()["checks"]["database"]["schema"] == "0003"
+    assert h.json()["checks"]["database"]["schema"] == "0006"

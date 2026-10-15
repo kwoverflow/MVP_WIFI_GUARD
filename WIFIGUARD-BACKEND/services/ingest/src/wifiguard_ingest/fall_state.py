@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+from copy import deepcopy
 from collections import deque
 from dataclasses import dataclass, field
 from uuid import UUID
@@ -88,3 +89,41 @@ class FallStateManager:
                 result.device_id, _Tracker(cooldown_seconds=self.cooldown_seconds)
             )
             return tracker.apply(result)
+
+    def set_cooldown(self, device_id: UUID, seconds: float) -> None:
+        import math
+        if not math.isfinite(seconds) or not 0 <= seconds <= 60:
+            raise ValueError("invalid cooldown")
+        with self._lock:
+            tracker = self._trackers.setdefault(device_id, _Tracker(cooldown_seconds=self.cooldown_seconds))
+            tracker.cooldown_seconds = seconds
+
+    def pause(self, device_id: UUID) -> None:
+        """End a local occupancy session, retaining counts/history/deduplication."""
+        with self._lock:
+            tracker = self._trackers.get(device_id)
+            if tracker is not None:
+                tracker.recent.clear()
+                tracker.state = "IDLE"
+                tracker.cooldown_until = 0.0
+
+    def apply_durable(self, result: InferenceResult, persist) -> FallUpdate | None:
+        """Local HTTP ACK must not swallow a fall when the DB is unavailable.
+
+        Roll back deduplication AND the state transition on persistence failure.
+        Only the opt-in local transport uses this path; Kafka behavior is unchanged.
+        """
+        with self._lock:
+            tracker = self._trackers.setdefault(
+                result.device_id, _Tracker(cooldown_seconds=self.cooldown_seconds)
+            )
+            before = deepcopy(tracker)
+            update = tracker.apply(result)
+            if update is not None and update.new_fall:
+                try:
+                    if not persist(result):
+                        raise RuntimeError("fall persistence unavailable; retry required")
+                except Exception:
+                    self._trackers[result.device_id] = before
+                    raise
+            return update

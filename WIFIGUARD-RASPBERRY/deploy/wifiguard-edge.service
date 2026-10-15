@@ -18,6 +18,9 @@ SupplementaryGroups=gpio spi
 WorkingDirectory=/opt/wifiguard-edge
 Environment=PYTHONPATH=/opt/wifiguard-edge/src
 Environment=PYTHONUNBUFFERED=1
+StateDirectory=wifiguard-edge
+StateDirectoryMode=0700
+Environment=EDGE_CONTROL_STATE_DIR=/var/lib/wifiguard-edge
 ExecStart=/opt/wifiguard-edge/.venv/bin/python -m wifiguard_edge
 
 # 24시간 상시 운용 (명세 §4 Phase 5-2)

@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import logging
+import json
+import os
 import threading
 import time
-from collections import OrderedDict, defaultdict
+from collections import OrderedDict, defaultdict, deque
 from datetime import UTC, datetime
 from typing import Any
 
@@ -34,6 +36,9 @@ class InferenceWorker:
     ) -> None:
         self.settings = settings or InferenceSettings.from_env()
         self.engine = engine
+        if feature_builder is None and self.settings.feature_backend == 'cpu-optimized':
+            from .features import CpuOptimizedFeatureBuilder
+            feature_builder = CpuOptimizedFeatureBuilder()
         self.feature_builder = feature_builder or LiveFeatureBuilder()
         self._consumer_factory = consumer_factory
         self._producer_factory = producer_factory
@@ -54,6 +59,8 @@ class InferenceWorker:
         }
         self._last_error: str | None = None
         self._prepared = False
+        self._timings = {stage: deque(maxlen=128) for stage in ('features', 'inference', 'total')}
+        self._status_written_at = 0.0
         self._trigger_states: dict[str, tuple[ABTriggerState, int, datetime]] = {}
 
     def prepare(self) -> None:
@@ -113,6 +120,8 @@ class InferenceWorker:
                     client.close()
                 except Exception:
                     log.debug("Kafka client close failed", exc_info=True)
+        self._status_written_at = 0.0
+        self._write_runtime_status()
 
     def _run(self) -> None:
         log.info(
@@ -130,8 +139,10 @@ class InferenceWorker:
                 messages = [message for records in polled.values() for message in records]
                 if messages:
                     self._process_messages(messages)
+                self._write_runtime_status()
             except Exception as exc:
                 self._record_error(exc)
+                self._write_runtime_status()
                 log.exception("inference loop failed")
                 self._stop_event.wait(1.0)
 
@@ -237,6 +248,10 @@ class InferenceWorker:
                     raise RuntimeError("model returned a different batch length")
                 for item, probability in zip(group, probabilities, strict=True):
                     self._publish_result(item, float(probability), feature_ms, infer_ms)
+                with self._lock:
+                    self._timings['features'].append(feature_ms)
+                    self._timings['inference'].append(infer_ms)
+                    self._timings['total'].append(feature_ms + infer_ms)
             except IncompatibleSignalError as exc:
                 with self._lock:
                     self._counts["incompatible"] += len(group)
@@ -252,6 +267,30 @@ class InferenceWorker:
             self._counts["batches"] += 1
             self._last_error = None
         return True
+
+    def _write_runtime_status(self):
+        path = self.settings.status_file
+        now = time.monotonic()
+        if path is None or now - self._status_written_at < 2:
+            return
+        self._status_written_at = now
+        try:
+            with self._lock:
+                timings = {stage: {'count': len(values),
+                    'median': float(np.median(values)) if values else None,
+                    'p95': float(np.percentile(values, 95)) if values else None,
+                    'max': max(values) if values else None} for stage, values in self._timings.items()}
+                payload = {'epoch_seconds': time.time(), 'running': not self._stop_event.is_set(),
+                    'counts': dict(self._counts), 'has_error': self._last_error is not None,
+                    'feature_backend': self.settings.feature_backend,
+                    'model_version': getattr(self.engine, 'model_version', None), 'processing_ms': timings}
+            path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = path.with_name(path.name + f'.{os.getpid()}.tmp')
+            temporary.write_text(json.dumps(payload, allow_nan=False), encoding='utf-8')
+            os.replace(temporary, path)
+        except (OSError, ValueError, TypeError):
+            # Monitoring must not prevent Kafka processing or alter commit offsets.
+            log.warning('inference runtime snapshot could not be written')
 
     def _publish_result(
         self,

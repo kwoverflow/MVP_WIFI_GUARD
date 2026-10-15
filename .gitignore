@@ -8,6 +8,7 @@
 **/node_modules/
 **/dist/
 **/coverage/
+**/*.log
 
 # ESP-IDF and other generated build trees
 **/build/
@@ -19,6 +20,9 @@
 DOCS/.report_qa_*/
 
 # Operational model artifacts and local validation data
+WIFIGUARD-BACKEND/_reference/Window3BestModelInference/dataset/**/*.npz
+WIFIGUARD-BACKEND/_reference/Window3BestModelInference/dataset/*.csv
+WIFIGUARD-BACKEND/_reference/Window3BestModelInference/outputs/*.csv
 **/*.pt
 **/*.pth
 **/.validation-demo/
@@ -29,3 +33,14 @@ DOCS/.report_qa_*/
 !**/.env.example
 **/certs/*.pem
 **/certs/*.key
+
+# Runtime snapshots, FCM credentials and build output are never source code.
+**/.output/
+**/.venv-onnx/
+**/local-output/
+**/artifacts/runtime-resources/*
+!**/artifacts/runtime-resources/.gitkeep
+**/*service-account*.json
+**/google-services.json
+**/*.jks
+**/*.keystore

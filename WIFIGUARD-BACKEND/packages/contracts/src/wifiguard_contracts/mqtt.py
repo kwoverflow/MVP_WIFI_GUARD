@@ -313,6 +313,7 @@ class CmdMsg(WireModel):
     cmd_id: UUID = Field(description="ack 가 이 값을 되돌려준다")
     action: CmdAction
     args: dict[str, Any] = Field(default_factory=dict)
+    expires_at: datetime | None = Field(default=None, description="Mutating remote commands require a UTC deadline")
 
 
 AckStatus = Literal["accepted", "progress", "done", "error"]

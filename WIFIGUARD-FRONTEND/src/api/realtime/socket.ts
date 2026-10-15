@@ -42,7 +42,15 @@ export interface LiveSnapshot {
   droppedFrames: number;
 }
 
-const WS_URL = import.meta.env.VITE_WS_URL ?? `${API_BASE.replace(/^http/, "ws")}/ws/live`;
+// Pi5 bundles use an empty API base: the same build works from any LAN address.
+function websocketUrl(apiBase: string, override: string | undefined, origin: string): string {
+  return override || `${(apiBase || origin).replace(/\/$/, "").replace(/^http/, "ws")}/ws/live`;
+}
+const WS_URL = websocketUrl(
+  API_BASE,
+  import.meta.env.VITE_WS_URL,
+  typeof window !== "undefined" ? window.location.origin : "http://127.0.0.1:8000",
+);
 
 /** 10Hz 기준 30초. 구 구현과 같은 길이지만 **기기별**이다. */
 const HISTORY_MAX = 300;
@@ -273,4 +281,11 @@ export const liveSocket = {
   },
 };
 
-export const __testing = { WS_URL, HISTORY_MAX, BACKOFF_MIN_MS, BACKOFF_MAX_MS, backoffMs };
+export const __testing = {
+  WS_URL,
+  HISTORY_MAX,
+  BACKOFF_MIN_MS,
+  BACKOFF_MAX_MS,
+  backoffMs,
+  websocketUrl,
+};

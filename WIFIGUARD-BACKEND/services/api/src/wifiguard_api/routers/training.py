@@ -19,6 +19,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from ..deps import Scope, add_log, get_db, get_scope
+from ..errors import forbidden
 
 router = APIRouter(prefix="/training", tags=["training"])
 
@@ -37,8 +38,12 @@ def _artifact_dir() -> Path:
 def _read_artifact(name: str) -> dict[str, Any] | None:
     path = _artifact_dir() / ARTIFACT_FILES[name]
     try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+        with path.open('rb') as stream:
+            raw = stream.read(262145)
+        if len(raw) > 262144:
+            return None
+        value = json.loads(raw)
+    except (OSError, ValueError, UnicodeError):
         return None
     return value if isinstance(value, dict) else None
 
@@ -91,6 +96,10 @@ def build_status() -> dict[str, Any]:
         "checkedAt": datetime.now(UTC).isoformat(),
         "overall": "passed" if all(stage["status"] == "passed" for stage in stages) else "degraded",
         "mlflowHealthy": _mlflow_healthy(),
+        "evidenceOnly": True,
+        "trainingRunning": None,
+        "automaticRetrainingConfigured": False,
+        "notice": "과거 실행 산출물입니다. 현재 학습 실행·배포 완료·낙상 정확도를 의미하지 않습니다.",
         "stages": stages,
         "metrics": {
             "featureRecordings": dataset.get("feature_recordings"),
@@ -110,11 +119,19 @@ def training_status(_: Scope = Depends(get_scope)) -> dict[str, Any]:
     return build_status()
 
 
+@router.get("/resources")
+def resource_status(_: Scope = Depends(get_scope)) -> dict[str, Any]:
+    from ..operations import resources
+    return resources()
+
+
 @router.post("/validate")
 def validate_training_pipeline(
     scope: Scope = Depends(get_scope),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
+    if not scope.can_edit_config():
+        raise forbidden()
     status = build_status()
     level = "INFO" if status["overall"] == "passed" and status["mlflowHealthy"] else "WARN"
     add_log(db, scope, level, f"MLOps 파이프라인 검증: {status['overall']}")

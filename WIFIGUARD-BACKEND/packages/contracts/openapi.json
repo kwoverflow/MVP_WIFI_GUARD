@@ -32,12 +32,86 @@
         "title": "AccountPatch",
         "type": "object"
       },
+      "AlertTestIn": {
+        "additionalProperties": false,
+        "properties": {
+          "confirmed_test": {
+            "const": true,
+            "title": "Confirmed Test",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "confirmed_test"
+        ],
+        "title": "AlertTestIn",
+        "type": "object"
+      },
+      "BindingIn": {
+        "additionalProperties": false,
+        "properties": {
+          "device_id": {
+            "format": "uuid",
+            "title": "Device Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device_id"
+        ],
+        "title": "BindingIn",
+        "type": "object"
+      },
+      "CommandIn": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "start",
+              "stop",
+              "recalibrate",
+              "confirm-empty-room"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "device_id": {
+            "format": "uuid",
+            "title": "Device Id",
+            "type": "string"
+          },
+          "empty_room_confirmed": {
+            "default": false,
+            "title": "Empty Room Confirmed",
+            "type": "boolean"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          }
+        },
+        "required": [
+          "device_id",
+          "action"
+        ],
+        "title": "CommandIn",
+        "type": "object"
+      },
       "DeviceIn": {
         "properties": {
           "connection": {
             "enum": [
               "MQTT",
-              "SERIAL"
+              "SERIAL",
+              "SPI"
             ],
             "title": "Connection",
             "type": "string"
@@ -159,7 +233,8 @@
           "connection": {
             "enum": [
               "MQTT",
-              "SERIAL"
+              "SERIAL",
+              "SPI"
             ],
             "title": "Connection",
             "type": "string"
@@ -1017,6 +1092,71 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "InstallationIn": {
+        "properties": {
+          "fcmToken": {
+            "maxLength": 4096,
+            "minLength": 32,
+            "pattern": "^[A-Za-z0-9:_-]+$",
+            "title": "Fcmtoken",
+            "type": "string"
+          },
+          "installationId": {
+            "format": "uuid",
+            "title": "Installationid",
+            "type": "string"
+          },
+          "label": {
+            "default": "Android",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "platform": {
+            "const": "android",
+            "default": "android",
+            "title": "Platform",
+            "type": "string"
+          }
+        },
+        "required": [
+          "installationId",
+          "fcmToken"
+        ],
+        "title": "InstallationIn",
+        "type": "object"
+      },
+      "InstallationOut": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "installationId": {
+            "format": "uuid",
+            "title": "Installationid",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "installationId",
+          "label",
+          "enabled"
+        ],
+        "title": "InstallationOut",
+        "type": "object"
+      },
       "LoginIn": {
         "properties": {
           "email": {
@@ -1195,6 +1335,25 @@
           "newPassword"
         ],
         "title": "PasswordChangeIn",
+        "type": "object"
+      },
+      "ReceiptIn": {
+        "properties": {
+          "displayed": {
+            "default": false,
+            "title": "Displayed",
+            "type": "boolean"
+          },
+          "installationId": {
+            "format": "uuid",
+            "title": "Installationid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "installationId"
+        ],
+        "title": "ReceiptIn",
         "type": "object"
       },
       "RecipientIn": {
@@ -1621,6 +1780,127 @@
         "title": "RefreshIn",
         "type": "object"
       },
+      "RemoteCommandIn": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "calibrate",
+              "set_config",
+              "ping"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "args": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Args",
+            "type": "object"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "title": "RemoteCommandIn",
+        "type": "object"
+      },
+      "RemoteCommandOut": {
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "attempts": {
+            "title": "Attempts",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "device_id": {
+            "format": "uuid",
+            "title": "Device Id",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "progress": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Progress"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result"
+          },
+          "stage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "device_id",
+          "action",
+          "state",
+          "created_at",
+          "expires_at",
+          "attempts",
+          "stage",
+          "progress",
+          "result",
+          "error"
+        ],
+        "title": "RemoteCommandOut",
+        "type": "object"
+      },
       "ResidentIn": {
         "properties": {
           "age": {
@@ -2009,6 +2289,26 @@
         "title": "ResidentPatch",
         "type": "object"
       },
+      "ScenarioIn": {
+        "additionalProperties": false,
+        "properties": {
+          "scenario": {
+            "enum": [
+              "empty",
+              "motion",
+              "still",
+              "disconnect"
+            ],
+            "title": "Scenario",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scenario"
+        ],
+        "title": "ScenarioIn",
+        "type": "object"
+      },
       "SignupIn": {
         "properties": {
           "email": {
@@ -2177,6 +2477,20 @@
           "updatedAt"
         ],
         "title": "TenantConfigOut",
+        "type": "object"
+      },
+      "TestIn": {
+        "properties": {
+          "confirmed": {
+            "const": true,
+            "title": "Confirmed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "confirmed"
+        ],
+        "title": "TestIn",
         "type": "object"
       },
       "TokenPair": {
@@ -3252,6 +3566,174 @@
         ]
       }
     },
+    "/api/v1/devices/{device_id}/commands": {
+      "get": {
+        "operationId": "list_commands_api_v1_devices__device_id__commands_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Device Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RemoteCommandOut"
+                  },
+                  "title": "Response List Commands Api V1 Devices  Device Id  Commands Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Commands",
+        "tags": [
+          "devices"
+        ]
+      },
+      "post": {
+        "operationId": "queue_command_api_v1_devices__device_id__commands_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Device Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemoteCommandIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteCommandOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Queue Command",
+        "tags": [
+          "devices"
+        ]
+      }
+    },
     "/api/v1/event-logs": {
       "get": {
         "operationId": "list_logs_api_v1_event_logs_get",
@@ -4189,6 +4671,534 @@
         ]
       }
     },
+    "/api/v1/local-edge/bind": {
+      "post": {
+        "operationId": "bind_api_v1_local_edge_bind_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BindingIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Bind",
+        "tags": [
+          "local-edge"
+        ]
+      }
+    },
+    "/api/v1/local-edge/commands": {
+      "post": {
+        "operationId": "command_api_v1_local_edge_commands_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommandIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Command",
+        "tags": [
+          "local-edge"
+        ]
+      }
+    },
+    "/api/v1/local-edge/simulation/alert-test": {
+      "post": {
+        "operationId": "alert_test_api_v1_local_edge_simulation_alert_test_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlertTestIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Alert Test",
+        "tags": [
+          "PC simulation"
+        ]
+      }
+    },
+    "/api/v1/local-edge/simulation/scenario": {
+      "post": {
+        "operationId": "scenario_api_v1_local_edge_simulation_scenario_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScenarioIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Scenario",
+        "tags": [
+          "PC simulation"
+        ]
+      }
+    },
+    "/api/v1/local-edge/status": {
+      "get": {
+        "operationId": "status_api_v1_local_edge_status_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "device_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Device Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Status",
+        "tags": [
+          "local-edge"
+        ]
+      }
+    },
+    "/api/v1/mobile/config": {
+      "get": {
+        "operationId": "config_api_v1_mobile_config_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Config",
+        "tags": [
+          "mobile push"
+        ]
+      }
+    },
+    "/api/v1/mobile/deliveries": {
+      "get": {
+        "operationId": "deliveries_api_v1_mobile_deliveries_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Deliveries",
+        "tags": [
+          "mobile push"
+        ]
+      }
+    },
+    "/api/v1/mobile/deliveries/{delivery_id}/receipt": {
+      "post": {
+        "operationId": "receipt_api_v1_mobile_deliveries__delivery_id__receipt_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "delivery_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Delivery Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReceiptIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Receipt",
+        "tags": [
+          "mobile push"
+        ]
+      }
+    },
+    "/api/v1/mobile/installations": {
+      "get": {
+        "operationId": "installations_api_v1_mobile_installations_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/InstallationOut"
+                  },
+                  "title": "Response Installations Api V1 Mobile Installations Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Installations",
+        "tags": [
+          "mobile push"
+        ]
+      },
+      "put": {
+        "operationId": "register_api_v1_mobile_installations_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InstallationIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstallationOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Register",
+        "tags": [
+          "mobile push"
+        ]
+      }
+    },
+    "/api/v1/mobile/installations/{installation_id}": {
+      "delete": {
+        "operationId": "revoke_api_v1_mobile_installations__installation_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "installation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Installation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Revoke",
+        "tags": [
+          "mobile push"
+        ]
+      }
+    },
+    "/api/v1/mobile/installations/{installation_id}/test": {
+      "post": {
+        "operationId": "test_push_api_v1_mobile_installations__installation_id__test_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "installation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Installation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TestIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Test Push",
+        "tags": [
+          "mobile push"
+        ]
+      }
+    },
     "/api/v1/recipients": {
       "get": {
         "operationId": "list_recipients_api_v1_recipients_get",
@@ -4964,6 +5974,34 @@
         "summary": "Patch Resident",
         "tags": [
           "residents"
+        ]
+      }
+    },
+    "/api/v1/training/resources": {
+      "get": {
+        "operationId": "resource_status_api_v1_training_resources_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Resource Status Api V1 Training Resources Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Resource Status",
+        "tags": [
+          "training"
         ]
       }
     },

@@ -4,9 +4,11 @@ import { Header } from "./index";
 import { useEventLogs } from "@/api/queries";
 import type { LogLevel } from "@/lib/domain";
 import { fmtDateTime } from "@/lib/format";
+import { usePresentation } from "@/components/usePresentation";
+import { activityMessage, ACTIVITY_LEVELS } from "@/lib/user-presentation";
 
 export const Route = createFileRoute("/event-log")({
-  head: () => ({ meta: [{ title: "이벤트 로그 · CSI-Guard" }] }),
+  head: () => ({ meta: [{ title: "활동 기록 · WIFI-GUARD" }] }),
   component: EventLogPage,
 });
 
@@ -24,15 +26,16 @@ function EventLogPage() {
     limit: 500,
   });
   const logs = data?.items ?? [];
+  const presentation = usePresentation();
 
   return (
     <div>
-      <Header title="이벤트 로그" />
+      <Header title="활동 기록" />
       <div className="p-6 space-y-4 max-w-6xl">
         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight mb-1">Event Log</h1>
-            <p className="text-sm text-muted">오늘 조건에 맞는 이벤트 {data?.total ?? 0}건.</p>
+            <h1 className="text-2xl font-semibold tracking-tight mb-1">최근 활동</h1>
+            <p className="text-sm text-muted">오늘 기록 {data?.total ?? 0}건.</p>
           </div>
           <div className="flex gap-2">
             <input
@@ -46,11 +49,11 @@ function EventLogPage() {
               onChange={(e) => setFilter(e.target.value as "ALL" | LogLevel)}
               className="bg-surface border border-border rounded px-3 py-2 text-xs font-mono"
             >
-              <option value="ALL">전체 레벨</option>
-              <option value="FALL">FALL</option>
-              <option value="ERROR">ERROR</option>
-              <option value="WARN">WARN</option>
-              <option value="INFO">INFO</option>
+              <option value="ALL">전체 종류</option>
+              <option value="FALL">낙상</option>
+              <option value="ERROR">오류</option>
+              <option value="WARN">주의</option>
+              <option value="INFO">안내</option>
             </select>
           </div>
         </div>
@@ -59,9 +62,9 @@ function EventLogPage() {
           <table className="w-full text-left text-sm font-mono">
             <thead>
               <tr className="text-[10px] text-muted border-b border-border bg-background/30">
-                <th className="p-3 font-medium uppercase w-44">Timestamp</th>
-                <th className="p-3 font-medium uppercase w-20">Level</th>
-                <th className="p-3 font-medium uppercase">Message</th>
+                <th className="p-3 font-medium uppercase w-44">시각</th>
+                <th className="p-3 font-medium uppercase w-20">종류</th>
+                <th className="p-3 font-medium uppercase">내용</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -70,10 +73,12 @@ function EventLogPage() {
                   <td className="p-3 text-muted">{fmtDateTime(l.ts)}</td>
                   <td className="p-3">
                     <span className={`text-[10px] font-bold uppercase ${levelColor(l.level)}`}>
-                      {l.level}
+                      {ACTIVITY_LEVELS[l.level] ?? l.level}
                     </span>
                   </td>
-                  <td className="p-3 text-foreground/80">{l.msg}</td>
+                  <td className="p-3 text-foreground/80">
+                    {activityMessage(l.msg, presentation.demo)}
+                  </td>
                 </tr>
               ))}
               {!isLoading && logs.length === 0 && (

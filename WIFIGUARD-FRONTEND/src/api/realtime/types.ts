@@ -29,7 +29,7 @@ export const WS_CLOSE_TOKEN_EXPIRED = 4001;
 
 export type PresenceState = "present" | "absent";
 export type FallState = "IDLE" | "SUSPECT" | "FALL" | "COOLDOWN";
-export type PostProcess = "none" | "causal_mode5" | "centered_mode5";
+export type PostProcess = "none" | "causal_mode5" | "centered_mode5" | "segmentation_a" | "segmentation_b";
 
 /** `PresenceMsg` 의 상태 11필드. 이름이 엣지·DB 와 같다. */
 export interface PresenceBlock {
@@ -54,6 +54,7 @@ export interface FallBlock {
   postprocess: PostProcess;
   fall_count: number;
   last_fall_time: number | null;
+  fall_event_id?: string | null;
   updated_at: string;
 }
 
@@ -146,6 +147,7 @@ export const FALL_FIELDS = [
   "postprocess",
   "fall_count",
   "last_fall_time",
+  "fall_event_id",
   "updated_at",
 ] as const;
 

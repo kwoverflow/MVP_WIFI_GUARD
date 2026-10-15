@@ -42,6 +42,7 @@ class IngestService:
         self.fall_notification = FallNotificationDispatcher()
         self.bridge: MqttBridge | None = None
         self.consumer: IngestConsumer | None = None
+        self.command_dispatcher = None
         self._sweep_stop = threading.Event()
         self._sweep_thread: threading.Thread | None = None
         self._started = False
@@ -51,6 +52,11 @@ class IngestService:
         if self._started:
             return
         s = self.settings
+        if s.local_enabled:
+            if len(s.local_edge_token.encode("utf-8")) < 32 or "REPLACE" in s.local_edge_token:
+                raise ValueError("LOCAL_EDGE_TOKEN must be at least 32 bytes")
+            if s.mqtt_enabled or s.kafka_enabled:
+                raise ValueError("local ingest cannot run alongside MQTT/Kafka ingest")
         log.info("인제스트 기동: %s", s.describe())
 
         if loop is not None:
@@ -64,8 +70,10 @@ class IngestService:
             )
             self.presence_sink.start()
 
-        if s.kafka_enabled:
-            self.consumer = IngestConsumer(
+        if s.kafka_enabled or s.local_enabled:
+            from .local import LocalConsumer
+            consumer_class = LocalConsumer if s.local_enabled else IngestConsumer
+            self.consumer = consumer_class(
                 s,
                 cache=self.cache,
                 hub=self.hub,
@@ -75,11 +83,16 @@ class IngestService:
                 fall_state=self.fall_state,
                 fall_notification=self.fall_notification,
             )
-            self.consumer.start()
+            if s.kafka_enabled:
+                self.consumer.start()
 
         if s.mqtt_enabled:
             self.bridge = MqttBridge(s)
             self.bridge.start()
+            if s.kafka_enabled:
+                from .remote_control import CommandDispatcher
+                self.command_dispatcher = CommandDispatcher(self.bridge)
+                self.command_dispatcher.start()
 
         if s.any_enabled:
             self._sweep_thread = threading.Thread(
@@ -97,6 +110,8 @@ class IngestService:
         self._sweep_stop.set()
         if self._sweep_thread is not None:
             self._sweep_thread.join(timeout=2.0)
+        if self.command_dispatcher is not None:
+            self.command_dispatcher.stop()
         if self.bridge is not None:
             self.bridge.stop()
         if self.consumer is not None:

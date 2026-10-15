@@ -5,7 +5,7 @@
  * - 오류는 백엔드 포맷 {detail, code, fields?} 를 ApiError 로 던진다 (services/api errors.py).
  */
 
-export const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000").replace(
+export const API_BASE = (import.meta.env.VITE_PI5_LOCAL === "1" ? "" : (import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000")).replace(
   /\/$/,
   "",
 );

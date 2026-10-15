@@ -130,6 +130,22 @@ class IngestConsumer:
                 self._last_error = f"레코드 검증 실패: {exc.error_count()} 건"
             return False
 
+        return self.handle_record(kafka_topic, record)
+
+    def handle_record(self, kafka_topic: str, record) -> bool:
+        """Dispatch a validated contract without a JSON round trip.
+
+        Kafka still enters via handle()/model_validate_json. The local API has
+        already validated exactly the same Pydantic model and authenticated its
+        device; neither authentication nor DB persistence is bypassed here.
+        """
+        expected = {
+            topics.KAFKA_FEATURE_STREAM: FeatureRecord,
+            topics.KAFKA_TELEMETRY: StatusRecord,
+            topics.KAFKA_INFERENCE_RESULT: InferenceResult,
+        }.get(kafka_topic)
+        if expected is None or type(record) is not expected:
+            return False
         kind = record.kind if isinstance(record, InferenceResult) else record.payload.kind
         with self._lock:
             self._counts[kind] = self._counts.get(kind, 0) + 1
@@ -140,7 +156,12 @@ class IngestConsumer:
             self._on_telemetry(record)
         elif kind == "inference":
             self._on_inference(record)
-        # signal 은 모델서버가 소비한다(M5). ack 는 기록만 하고 흘려보낸다.
+        elif kind == "ack":
+            from .remote_control import apply_ack
+            # Recheck wrapper identity even when called with a prevalidated object.
+            if record.device_id == record.payload.device_id and record.tenant_id == record.payload.tenant_id:
+                apply_ack(record.payload)
+        # signal is consumed by the inference worker.
         return True
 
     def _on_presence(self, record: FeatureRecord) -> None:
@@ -165,17 +186,24 @@ class IngestConsumer:
         update = self.fall_state.apply(result)
         if update is None:  # duplicate
             return
+        fields = dict(update.fields)
+        if update.new_fall and self.fall_sink is not None:
+            persisted = self.fall_sink.record(result)
+            resolve_id = getattr(self.fall_sink, "event_id", None)
+            if resolve_id is not None:
+                try:
+                    fields["fall_event_id"] = resolve_id(result)
+                except Exception:
+                    log.warning("committed fall ID unavailable; UI must not acknowledge a fabricated ID")
+            if persisted and self.fall_notification is not None:
+                self.fall_notification.notify(result)
         state = self.cache.apply_fall(
             result.device_id,
             result.tenant_id,
-            update.fields,
+            fields,
             result.inferred_at,
         )
         self.hub.publish_from_thread(state)
-        if update.new_fall and self.fall_sink is not None:
-            persisted = self.fall_sink.record(result)
-            if persisted and self.fall_notification is not None:
-                self.fall_notification.notify(result)
 
     def status(self) -> dict[str, Any]:
         with self._lock:
